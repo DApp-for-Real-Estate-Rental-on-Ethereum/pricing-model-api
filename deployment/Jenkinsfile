@@ -1,0 +1,392 @@
+pipeline {
+    agent any
+    
+    environment {
+        DOCKER_IMAGE_NAME = 'medgm/morocco-pricing-api'
+        APP_NAME = 'morocco-pricing-api'
+        SONARQUBE_TOKEN = credentials('sonarqube-token')
+    }
+    
+    // No parameters needed while deploying locally only
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                script {
+                    sh 'git rev-parse --short HEAD'
+                }
+            }
+        }
+        
+        stage('Verify Project Layout') {
+            steps {
+                script {
+                    sh '''
+                        echo "Verifying pricing API repository layout..."
+                        pwd
+                        ls -la
+                        echo "Contents of deployment directory:"
+                        ls -la deployment/
+                        if [ ! -f deployment/requirements.txt ]; then
+                            echo "ERROR: deployment/requirements.txt not found!"
+                            echo "Available files:"
+                            ls -la deployment/
+                            exit 1
+                        fi
+                        if [ ! -f models/pricing_gradient_boosting_v1.pkl ]; then
+                            echo "ERROR: Model file not found!"
+                            echo "Available model files:"
+                            ls -la models/
+                            exit 1
+                        fi
+                        echo "Project layout verified."
+                        echo "Cleaning up any leftover files from previous builds..."
+                        rm -rf venv .pytest_cache htmlcov || true
+                        echo "Workspace cleaned, current contents:"
+                        ls -la
+                    '''
+                }
+            }
+        }
+        
+        stage('Build & Test') {
+            steps {
+                script {
+                    sh '''
+                        echo "Setting up Python environment and running tests..."
+                        echo "Current workspace contents:"
+                        ls -la "$WORKSPACE"
+                        echo "Checking deployment files:"
+                        ls -la "$WORKSPACE/deployment/"
+                        echo "Running tests using Docker..."
+                        
+                        # Create a fresh container with Python environment
+                        CONTAINER_ID=$(docker create -w /workspace python:3.12-slim sh -c "
+                            echo 'Inside Docker container:'
+                            pwd
+                            ls -la
+                            echo 'Installing system dependencies...'
+                            apt-get update && apt-get install -y gcc g++ curl
+                            echo 'Installing Python dependencies...'
+                            pip install --no-cache-dir -r deployment/requirements.txt
+                            echo 'Running pytest...'
+                            cd deployment
+                            pytest test_api.py -v --tb=short --junitxml=test-results.xml
+                        ")
+                        
+                        echo "Container ID: $CONTAINER_ID"
+                        echo "Copying workspace files to container..."
+                        docker cp "$WORKSPACE/." $CONTAINER_ID:/workspace/
+                        
+                        echo "Starting container..."
+                        docker start -a $CONTAINER_ID
+                        
+                        echo "Copying test results back to workspace..."
+                        docker cp $CONTAINER_ID:/workspace/deployment/test-results.xml "$WORKSPACE/deployment/" || true
+                        
+                        echo "Cleaning up container..."
+                        docker rm $CONTAINER_ID
+                    '''
+                }
+            }
+        }
+        
+        stage('Publish Test Results') {
+            steps {
+                script {
+                    sh '''
+                        echo "Publishing test results..."
+                        if [ -f "deployment/test-results.xml" ]; then
+                            echo "Test reports found:"
+                            ls -la deployment/test-results.xml
+                        else
+                            echo "No test reports found"
+                        fi
+                    '''
+                }
+                junit testResults: 'deployment/test-results.xml', allowEmptyResults: true
+            }
+        }
+        
+        stage('Code Quality Analysis') {
+            steps {
+                script {
+                    sh '''
+                        if [ -f "deployment/app.py" ]; then
+                          echo "Running SonarQube analysis for pricing API..."
+                          CONTAINER_ID=$(docker create --network host -w /workspace python:3.12-slim sh -c "
+                            apt-get update && apt-get install -y curl unzip
+                            curl -o sonar-scanner-cli.zip -L https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
+                            unzip -q sonar-scanner-cli.zip
+                            ./sonar-scanner-4.8.0.2856-linux/bin/sonar-scanner \\
+                              -Dsonar.projectKey=morocco-pricing-api \\
+                              -Dsonar.host.url=http://localhost:9000 \\
+                              -Dsonar.login=${SONARQUBE_TOKEN} \\
+                              -Dsonar.sources=deployment/app.py \\
+                              -Dsonar.tests=deployment/test_api.py \\
+                              -Dsonar.python.version=3.12
+                          ")
+                          docker cp "$WORKSPACE/." $CONTAINER_ID:/workspace/
+                          docker start -a $CONTAINER_ID || true
+                          docker rm $CONTAINER_ID
+                        else
+                          echo "No app.py found; skipping SonarQube analysis."
+                        fi
+                    '''
+                }
+            }
+        }
+        
+        stage('Security Scan') {
+            steps {
+                script {
+                    sh '''
+                        echo "Running Python security checks..."
+                        
+                        # Use file copy approach like other stages
+                        CONTAINER_ID=$(docker create -w /workspace python:3.12-slim sh -c "
+                            echo 'Installing security scanning tools...'
+                            pip install --no-cache-dir safety bandit
+                            
+                            echo 'Running Safety check for known vulnerabilities...'
+                            pip install -r deployment/requirements.txt
+                            safety check --json > security-report.json || true
+                            
+                            echo 'Running Bandit security linter...'
+                            bandit -r deployment/app.py -f json -o bandit-report.json || true
+                            
+                            echo 'Generating HTML report...'
+                            bandit -r deployment/app.py -f html -o security-scan-report.html || true
+                        ")
+                        
+                        echo "Container ID: $CONTAINER_ID"
+                        echo "Copying workspace files to container..."
+                        docker cp "$WORKSPACE/." $CONTAINER_ID:/workspace/
+                        
+                        echo "Starting container..."
+                        docker start -a $CONTAINER_ID || true
+                        
+                        echo "Copying results back to workspace..."
+                        docker cp $CONTAINER_ID:/workspace/security-scan-report.html "$WORKSPACE/" || true
+                        docker cp $CONTAINER_ID:/workspace/security-report.json "$WORKSPACE/" || true
+                        docker cp $CONTAINER_ID:/workspace/bandit-report.json "$WORKSPACE/" || true
+                        
+                        echo "Cleaning up container..."
+                        docker rm $CONTAINER_ID
+                    '''
+                }
+                publishHTML([
+                    allowMissing: true,
+                    alwaysLinkToLastBuild: true,
+                    keepAll: true,
+                    reportDir: '.',
+                    reportFiles: 'security-scan-report.html',
+                    reportName: 'Python Security Scan Report'
+                ])
+            }
+        }
+        
+        stage('Model Validation') {
+            steps {
+                script {
+                    sh '''
+                        echo "Validating ML model..."
+                        CONTAINER_ID=$(docker create -w /workspace python:3.12-slim sh -c "
+                            echo 'Installing required packages...'
+                            pip install --no-cache-dir joblib scikit-learn pandas numpy
+                            
+                            echo 'Validating model file...'
+                            python3 -c \"
+import joblib
+import os
+
+model_path = 'models/pricing_gradient_boosting_v1.pkl'
+print(f'� Loading model from {model_path}...')
+
+if not os.path.exists(model_path):
+    print('❌ Model file not found!')
+    exit(1)
+
+model = joblib.load(model_path)
+print(f'✅ Model loaded successfully: {type(model).__name__}')
+print(f'✅ Model size: {os.path.getsize(model_path) / 1024 / 1024:.2f} MB')
+
+# Validate model has predict method
+if not hasattr(model, 'predict'):
+    print('❌ Model does not have predict method!')
+    exit(1)
+
+print('✅ Model validation passed!')
+\"
+                        ")
+                        
+                        echo "Copying workspace files to container..."
+                        docker cp "$WORKSPACE/." $CONTAINER_ID:/workspace/
+                        
+                        echo "Starting container..."
+                        docker start -a $CONTAINER_ID
+                        
+                        echo "Cleaning up container..."
+                        docker rm $CONTAINER_ID
+                    '''
+                }
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    sh '''
+                        echo "Building Docker image for pricing API..."
+                        cd deployment
+                        docker build -t medgm/morocco-pricing-api:${BUILD_NUMBER} .
+                        docker tag medgm/morocco-pricing-api:${BUILD_NUMBER} medgm/morocco-pricing-api:latest
+                        
+                        # Get git commit short hash
+                        GIT_COMMIT_SHORT=$(git rev-parse --short HEAD)
+                        docker tag medgm/morocco-pricing-api:${BUILD_NUMBER} medgm/morocco-pricing-api:${GIT_COMMIT_SHORT}
+                        
+                        echo "Docker images created:"
+                        docker images | grep medgm/morocco-pricing-api
+                    '''
+                }
+            }
+        }
+        
+        stage('Test Docker Container') {
+            steps {
+                script {
+                    sh '''
+                        echo "Testing Docker container..."
+                        # Stop any existing test container
+                        docker stop morocco-pricing-api-test || true
+                        docker rm morocco-pricing-api-test || true
+                        
+                        # Run container in detached mode
+                        docker run -d \
+                            --name morocco-pricing-api-test \
+                            -p 8888:8000 \
+                            -v $(pwd)/models:/app/models:ro \
+                            medgm/morocco-pricing-api:${BUILD_NUMBER}
+                        
+                        # Wait for container to start
+                        echo "⏳ Waiting for container to be ready..."
+                        sleep 10
+                        
+                        # Test health endpoint
+                        echo "Testing /health endpoint..."
+                        curl -f http://localhost:8888/health || exit 1
+                        
+                        # Test prediction endpoint
+                        echo "Testing /predict endpoint..."
+                        curl -f -X POST http://localhost:8888/predict \
+                            -H "Content-Type: application/json" \
+                            -d '{
+                                "city": "casablanca",
+                                "period": "summer",
+                                "geo_cluster": 1,
+                                "rating_value": 4.8,
+                                "rating_count": 50,
+                                "rating_density": 1.0,
+                                "has_rating": 1,
+                                "badge_superhost": false,
+                                "badge_guest_favorite": false,
+                                "badge_top_x": false,
+                                "any_badge": 0,
+                                "dist_to_center": 0.05,
+                                "struct_bedrooms": 2.0,
+                                "struct_bathrooms": 1.0,
+                                "struct_surface_m2": 80.0
+                            }' || exit 1
+                        
+                        echo "✅ Container tests passed!"
+                    '''
+                }
+            }
+            post {
+                always {
+                    sh '''
+                        # Cleanup test container
+                        docker stop morocco-pricing-api-test || true
+                        docker rm morocco-pricing-api-test || true
+                    '''
+                }
+            }
+        }
+        
+        stage('Push to Docker Hub') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(credentialsId: 'docker-registry-creds', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                        sh '''
+                            echo "Logging into Docker Hub..."
+                            echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
+                            
+                            # Get git commit short hash
+                            GIT_COMMIT_SHORT=$(git rev-parse --short HEAD)
+                            
+                            echo "Pushing images to Docker Hub..."
+                            docker push medgm/morocco-pricing-api:${BUILD_NUMBER}
+                            docker push medgm/morocco-pricing-api:latest
+                            docker push medgm/morocco-pricing-api:${GIT_COMMIT_SHORT}
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy to Local Registry') {
+            steps {
+                script {
+                    sh '''
+                        echo "Tagging and pushing to local registry..."
+                        docker tag medgm/morocco-pricing-api:${BUILD_NUMBER} localhost:5000/morocco-pricing-api:${BUILD_NUMBER}
+                        docker tag medgm/morocco-pricing-api:${BUILD_NUMBER} localhost:5000/morocco-pricing-api:latest
+                        
+                        docker push localhost:5000/morocco-pricing-api:${BUILD_NUMBER}
+                        docker push localhost:5000/morocco-pricing-api:latest
+                        
+                        echo "Pricing API deployed to local registry!"
+                        echo "Available images:"
+                        docker images | grep morocco-pricing-api
+                    '''
+                }
+            }
+        }
+        
+        // Deploy to Kubernetes stage removed for now (local-only testing)
+        
+        stage('Integration Tests') {
+            steps {
+                script {
+                    sh '''
+                        echo "Integration tests stage - placeholder for future integration testing"
+                        echo "This stage can be extended when integration test infrastructure is available"
+                    '''
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            script {
+                sh '''
+                    echo "Cleaning up Docker images..."
+                    docker rmi medgm/morocco-pricing-api:${BUILD_NUMBER} || true
+                    docker rmi localhost:5000/morocco-pricing-api:${BUILD_NUMBER} || true
+                '''
+            }
+        }
+        success {
+            script {
+                echo "Morocco Pricing API pipeline completed successfully! 🎉"
+            }
+        }
+        failure {
+            script {
+                echo "Morocco Pricing API pipeline failed! ❌"
+            }
+        }
+    }
+}

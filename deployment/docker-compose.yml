@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  pricing-api:
+    build: .
+    container_name: morocco-pricing-api
+    ports:
+      - "8000:8000"
+    environment:
+      - LOG_LEVEL=info
+      - MODEL_PATH=/app/models/pricing_gradient_boosting_v1.pkl
+    volumes:
+      - ./models:/app/models:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - pricing-network
+
+networks:
+  pricing-network:
+    driver: bridge
