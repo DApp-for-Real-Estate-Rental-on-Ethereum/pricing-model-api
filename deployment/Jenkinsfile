@@ -196,28 +196,28 @@ pipeline {
                             pip install --no-cache-dir joblib scikit-learn pandas numpy
                             
                             echo 'Validating model file...'
-                            python3 -c \"
+                            python3 << 'PYEOF'
 import joblib
 import os
 
 model_path = 'models/pricing_gradient_boosting_v1.pkl'
-print(f'� Loading model from {model_path}...')
+print('Loading model from:', model_path)
 
 if not os.path.exists(model_path):
-    print('❌ Model file not found!')
+    print('ERROR: Model file not found!')
     exit(1)
 
 model = joblib.load(model_path)
-print(f'✅ Model loaded successfully: {type(model).__name__}')
-print(f'✅ Model size: {os.path.getsize(model_path) / 1024 / 1024:.2f} MB')
+print('Model loaded successfully:', type(model).__name__)
+print('Model size: {:.2f} MB'.format(os.path.getsize(model_path) / 1024 / 1024))
 
 # Validate model has predict method
 if not hasattr(model, 'predict'):
-    print('❌ Model does not have predict method!')
+    print('ERROR: Model does not have predict method!')
     exit(1)
 
-print('✅ Model validation passed!')
-\"
+print('Model validation passed!')
+PYEOF
                         ")
                         
                         echo "Copying workspace files to container..."
