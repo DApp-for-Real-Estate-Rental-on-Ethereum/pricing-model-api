@@ -269,17 +269,30 @@ PYEOF
                             -v $(pwd)/models:/app/models:ro \
                             medgm/morocco-pricing-api:${BUILD_NUMBER}
                         
-                        # Wait for container to start
+                        # Wait for container to start (retry up to 10 times)
                         echo "⏳ Waiting for container to be ready..."
-                        sleep 10
+                        READY=0
+                        for i in $(seq 1 10); do
+                            if curl -sf http://localhost:8888/health > /dev/null; then
+                                READY=1
+                                break
+                            fi
+                            echo "Attempt $i/10: service not up yet, sleeping 3s..."
+                            sleep 3
+                        done
                         
-                        # Test health endpoint
+                        if [ "$READY" -ne 1 ]; then
+                            echo "❌ Service failed to become ready after retries"
+                            exit 1
+                        fi
+                        
+                        # Test health endpoint (now that it's up)
                         echo "Testing /health endpoint..."
-                        curl -f http://localhost:8888/health || exit 1
+                        curl -sf http://localhost:8888/health || exit 1
                         
                         # Test prediction endpoint
                         echo "Testing /predict endpoint..."
-                        curl -f -X POST http://localhost:8888/predict \
+                        curl -sf -X POST http://localhost:8888/predict \
                             -H "Content-Type: application/json" \
                             -d '{
                                 "city": "casablanca",
