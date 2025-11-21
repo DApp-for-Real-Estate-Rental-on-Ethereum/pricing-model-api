@@ -29,24 +29,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize FastAPI app
-app = FastAPI(
-    title="Morocco Airbnb Dynamic Pricing API",
-    description="AI-powered nightly price predictions for Airbnb listings across Moroccan cities",
-    version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc"
-)
-
-# CORS middleware for cross-origin requests
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 # Global model and metadata
 MODEL = None
 MODEL_METADATA = {}
@@ -141,6 +123,17 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan
 )
+
+# CORS middleware for cross-origin requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Configure appropriately for production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 class ListingFeatures(BaseModel):
     """Input features for a single listing prediction."""
     
