@@ -3,11 +3,11 @@ Dynamic Pricing API for Airbnb Listings in Morocco
 ===================================================
 
 FastAPI microservice for real-time nightly price predictions using the trained
-GradientBoosting model. Supports individual predictions and batch processing.
+RandomForest model. Supports individual predictions and batch processing.
 
 Author: AI-Powered Rental Platform
-Version: 1.0.0
-Model: pricing_gradient_boosting_v1.pkl
+Version: 2.0.0
+Model: pricing_model_randomforest.pkl
 """
 
 from contextlib import asynccontextmanager
@@ -33,15 +33,13 @@ logger = logging.getLogger(__name__)
 MODEL = None
 MODEL_METADATA = {}
 FEATURE_COLS = [
-    'city', 'period', 'geo_cluster',
-    'rating_value', 'rating_count', 'rating_density', 'has_rating',
-    'badge_superhost', 'badge_guest_favorite', 'badge_top_x', 'any_badge',
-    'dist_to_center',
-    'struct_bedrooms', 'struct_bathrooms', 'struct_surface_m2'
+    'stay_length_nights', 'discount_rate', 'bedroom_count', 'bed_count',
+    'rating_value', 'rating_count', 'image_count', 'badge_count',
+    'review_density', 'quality_proxy', 'city', 'season_category'
 ]
 
 VALID_CITIES = ['casablanca', 'marrakech', 'agadir', 'rabat', 'fes', 'tangier']
-VALID_PERIODS = ['march', 'april', 'summer']
+VALID_SEASONS = ['march', 'april', 'summer', 'other']
 
 
 # Lifespan context manager for startup/shutdown
@@ -54,9 +52,9 @@ async def lifespan(app: FastAPI):
     try:
         # Try multiple possible paths for the model file
         possible_model_paths = [
-            Path("models/pricing_gradient_boosting_v1.pkl"),  # From project root
-            Path("../models/pricing_gradient_boosting_v1.pkl"),  # From deployment directory
-            Path(__file__).parent.parent / "models" / "pricing_gradient_boosting_v1.pkl"  # Absolute from this file
+            Path("models/pricing_model_randomforest.pkl"),  # From project root
+            Path("../models/pricing_model_randomforest.pkl"),  # From deployment directory
+            Path(__file__).parent.parent / "models" / "pricing_model_randomforest.pkl"  # Absolute from this file
         ]
         
         model_path = None
@@ -68,17 +66,17 @@ async def lifespan(app: FastAPI):
         if model_path is None:
             raise FileNotFoundError(f"Model file not found in any of: {possible_model_paths}")
         
-        # Same logic for metrics path
-        possible_metrics_paths = [
-            Path("models/model_metrics_v1.csv"),
-            Path("../models/model_metrics_v1.csv"),
-            Path(__file__).parent.parent / "models" / "model_metrics_v1.csv"
+        # Try to load metadata
+        possible_metadata_paths = [
+            Path("models/pricing_model_randomforest_metadata.pkl"),
+            Path("../models/pricing_model_randomforest_metadata.pkl"),
+            Path(__file__).parent.parent / "models" / "pricing_model_randomforest_metadata.pkl"
         ]
         
-        metrics_path = None
-        for path in possible_metrics_paths:
+        metadata_path = None
+        for path in possible_metadata_paths:
             if path.exists():
-                metrics_path = path
+                metadata_path = path
                 break
         
         # Load model
@@ -86,17 +84,17 @@ async def lifespan(app: FastAPI):
         logger.info(f"✅ Model loaded successfully from {model_path}")
         
         # Load metadata
-        if metrics_path is not None:
-            metrics_df = pd.read_csv(metrics_path)
-            MODEL_METADATA = metrics_df.iloc[0].to_dict()
-            logger.info(f"✅ Model metadata loaded: MAE={MODEL_METADATA.get('mae_mad', 'N/A'):.2f} MAD")
+        if metadata_path is not None:
+            MODEL_METADATA = joblib.load(metadata_path)
+            logger.info(f"✅ Model metadata loaded: MAE={MODEL_METADATA.get('test_mae', 'N/A'):.2f} MAD")
         else:
-            logger.warning("⚠️ Metrics file not found. Using default metadata.")
+            logger.warning("⚠️ Metadata file not found. Using default metadata.")
             MODEL_METADATA = {
-                'model': 'GradientBoosting',
-                'version': '1.0',
-                'mae_mad': 2332.13,
-                'mape_pct': 5.73
+                'model_name': 'RandomForest',
+                'version': '2.0',
+                'test_mae': 55.33,
+                'test_rmse': 71.79,
+                'test_r2': 0.5499
             }
         
         logger.info("🚀 Application startup complete - ready to serve predictions!")
@@ -118,7 +116,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Morocco Airbnb Dynamic Pricing API",
     description="AI-powered nightly price predictions for Airbnb listings across Moroccan cities",
-    version="1.0.0",
+    version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan
@@ -137,21 +135,18 @@ app.add_middleware(
 class ListingFeatures(BaseModel):
     """Input features for a single listing prediction."""
     
+    stay_length_nights: int = Field(..., ge=1, description="Length of stay in nights")
+    discount_rate: float = Field(0.0, ge=0.0, le=1.0, description="Discount rate (0.0-1.0)")
+    bedroom_count: float = Field(..., ge=0.0, description="Number of bedrooms")
+    bed_count: float = Field(..., ge=0.0, description="Number of beds")
+    rating_value: float = Field(0.0, ge=0.0, le=5.0, description="Average rating (0.0-5.0)")
+    rating_count: int = Field(0, ge=0, description="Number of reviews")
+    image_count: int = Field(0, ge=0, description="Number of property images")
+    badge_count: int = Field(0, ge=0, description="Total number of badges")
+    review_density: float = Field(0.0, ge=0.0, description="Review density metric")
+    quality_proxy: float = Field(0.0, ge=0.0, description="Overall quality score")
     city: str = Field(..., description="City name (casablanca, marrakech, agadir, rabat, fes, tangier)")
-    period: str = Field(..., description="Booking period (march, april, summer)")
-    geo_cluster: int = Field(..., ge=-1, le=4, description="Geographic cluster ID (0-4, -1 for unknown)")
-    rating_value: float = Field(..., ge=0.0, le=5.0, description="Average rating (0.0-5.0)")
-    rating_count: int = Field(..., ge=0, description="Number of reviews")
-    rating_density: float = Field(..., ge=0.0, description="Relative rating density vs city average")
-    has_rating: int = Field(..., ge=0, le=1, description="Has any reviews (0 or 1)")
-    badge_superhost: bool = Field(..., description="Has Superhost badge")
-    badge_guest_favorite: bool = Field(..., description="Has Guest Favorite badge")
-    badge_top_x: bool = Field(..., description="Has Top X% badge")
-    any_badge: int = Field(..., ge=0, le=1, description="Has any badge (0 or 1)")
-    dist_to_center: float = Field(..., ge=0.0, le=1.0, description="Distance to city center (normalized 0-1)")
-    struct_bedrooms: Optional[float] = Field(2.0, ge=0.0, description="Number of bedrooms")
-    struct_bathrooms: Optional[float] = Field(1.0, ge=0.0, description="Number of bathrooms")
-    struct_surface_m2: Optional[float] = Field(80.0, ge=0.0, description="Surface area in m²")
+    season_category: str = Field(..., description="Season (march, april, summer, other)")
     
     model_config = ConfigDict(protected_namespaces=())
     
@@ -162,11 +157,11 @@ class ListingFeatures(BaseModel):
             raise ValueError(f"City must be one of: {', '.join(VALID_CITIES)}")
         return v.lower()
     
-    @field_validator('period')
+    @field_validator('season_category')
     @classmethod
-    def validate_period(cls, v):
-        if v.lower() not in VALID_PERIODS:
-            raise ValueError(f"Period must be one of: {', '.join(VALID_PERIODS)}")
+    def validate_season(cls, v):
+        if v.lower() not in VALID_SEASONS:
+            raise ValueError(f"Season must be one of: {', '.join(VALID_SEASONS)}")
         return v.lower()
 
 
@@ -180,7 +175,7 @@ class PredictionResponse(BaseModel):
     confidence_interval_lower: float = Field(..., description="Lower bound (predicted - MAE)")
     confidence_interval_upper: float = Field(..., description="Upper bound (predicted + MAE)")
     city: str = Field(..., description="Input city")
-    period: str = Field(..., description="Input period")
+    season: str = Field(..., description="Input season")
     model_version: str = Field(..., description="Model version used")
     prediction_timestamp: str = Field(..., description="ISO timestamp of prediction")
 
@@ -208,7 +203,7 @@ class HealthResponse(BaseModel):
     model_loaded: bool
     model_version: str
     model_mae: float
-    model_mape: float
+    model_r2: float
     timestamp: str
 
 
@@ -217,30 +212,27 @@ def prepare_features(listing: ListingFeatures) -> pd.DataFrame:
     """Convert ListingFeatures to DataFrame with proper dtypes."""
     
     data = {
-        'city': listing.city,
-        'period': listing.period,
-        'geo_cluster': listing.geo_cluster,
+        'stay_length_nights': listing.stay_length_nights,
+        'discount_rate': listing.discount_rate,
+        'bedroom_count': listing.bedroom_count,
+        'bed_count': listing.bed_count,
         'rating_value': listing.rating_value,
         'rating_count': listing.rating_count,
-        'rating_density': listing.rating_density,
-        'has_rating': listing.has_rating,
-        'badge_superhost': listing.badge_superhost,
-        'badge_guest_favorite': listing.badge_guest_favorite,
-        'badge_top_x': listing.badge_top_x,
-        'any_badge': listing.any_badge,
-        'dist_to_center': listing.dist_to_center,
-        'struct_bedrooms': listing.struct_bedrooms,
-        'struct_bathrooms': listing.struct_bathrooms,
-        'struct_surface_m2': listing.struct_surface_m2
+        'image_count': listing.image_count,
+        'badge_count': listing.badge_count,
+        'review_density': listing.review_density,
+        'quality_proxy': listing.quality_proxy,
+        'city': listing.city,
+        'season_category': listing.season_category
     }
     
     df = pd.DataFrame([data])
     
     # Set categorical dtypes
     df['city'] = df['city'].astype('category')
-    df['period'] = df['period'].astype('category')
+    df['season_category'] = df['season_category'].astype('category')
     
-    return df
+    return df[FEATURE_COLS]  # Ensure correct column order
 
 
 # API Endpoints
@@ -249,7 +241,7 @@ async def root():
     """Root endpoint with API information."""
     return {
         "service": "Morocco Airbnb Dynamic Pricing API",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "status": "operational",
         "documentation": "/docs",
         "endpoints": {
@@ -268,9 +260,9 @@ async def health_check():
     return HealthResponse(
         status="healthy" if MODEL is not None else "unhealthy",
         model_loaded=MODEL is not None,
-        model_version=str(MODEL_METADATA.get('version', '1.0')),
-        model_mae=MODEL_METADATA.get('mae_mad', 0.0),
-        model_mape=MODEL_METADATA.get('mape_pct', 0.0),
+        model_version=str(MODEL_METADATA.get('version', '2.0')),
+        model_mae=MODEL_METADATA.get('test_mae', 55.33),
+        model_r2=MODEL_METADATA.get('test_r2', 0.5499),
         timestamp=datetime.now(timezone.utc).isoformat()
     )
 
@@ -286,22 +278,23 @@ async def model_info():
         "model_metadata": MODEL_METADATA,
         "feature_columns": FEATURE_COLS,
         "valid_cities": VALID_CITIES,
-        "valid_periods": VALID_PERIODS,
+        "valid_seasons": VALID_SEASONS,
         "model_pipeline": {
             "preprocessing": "ColumnTransformer (StandardScaler + OneHotEncoder)",
-            "algorithm": "GradientBoostingRegressor",
+            "algorithm": "RandomForestRegressor",
             "hyperparameters": {
-                "learning_rate": 0.1,
-                "max_depth": 5,
-                "n_estimators": 200,
-                "subsample": 0.8
+                "max_depth": 10,
+                "min_samples_leaf": 1,
+                "min_samples_split": 2,
+                "n_estimators": 200
             }
         },
         "performance": {
-            "mae_mad": MODEL_METADATA.get('mae_mad', 'N/A'),
-            "mape_pct": MODEL_METADATA.get('mape_pct', 'N/A'),
-            "train_size": MODEL_METADATA.get('train_size', 'N/A'),
-            "val_size": MODEL_METADATA.get('val_size', 'N/A')
+            "test_mae": MODEL_METADATA.get('test_mae', 55.33),
+            "test_rmse": MODEL_METADATA.get('test_rmse', 71.79),
+            "test_r2": MODEL_METADATA.get('test_r2', 0.5499),
+            "train_size": MODEL_METADATA.get('train_size', 1324),
+            "test_size": MODEL_METADATA.get('test_size', 332)
         }
     }
 
@@ -325,7 +318,7 @@ async def predict_price(listing: ListingFeatures):
         prediction = MODEL.predict(X)[0]
         
         # Calculate confidence interval (predicted ± MAE)
-        mae = MODEL_METADATA.get('mae_mad', 2332.13)
+        mae = MODEL_METADATA.get('test_mae', 55.33)
         ci_lower = max(0, prediction - mae)
         ci_upper = prediction + mae
         
@@ -338,8 +331,8 @@ async def predict_price(listing: ListingFeatures):
             confidence_interval_lower=round(ci_lower, 2),
             confidence_interval_upper=round(ci_upper, 2),
             city=listing.city,
-            period=listing.period,
-            model_version=str(MODEL_METADATA.get('version', '1.0')),
+            season=listing.season_category,
+            model_version=str(MODEL_METADATA.get('version', '2.0')),
             prediction_timestamp=datetime.now(timezone.utc).isoformat()
         )
         
@@ -371,7 +364,7 @@ async def batch_predict(request: BatchPredictionRequest):
             prediction = MODEL.predict(X)[0]
             
             # Calculate confidence interval
-            mae = MODEL_METADATA.get('mae_mad', 2332.13)
+            mae = MODEL_METADATA.get('test_mae', 55.33)
             ci_lower = max(0, prediction - mae)
             ci_upper = prediction + mae
             
@@ -385,8 +378,8 @@ async def batch_predict(request: BatchPredictionRequest):
                     confidence_interval_lower=round(ci_lower, 2),
                     confidence_interval_upper=round(ci_upper, 2),
                     city=listing.city,
-                    period=listing.period,
-                    model_version=str(MODEL_METADATA.get('version', '1.0')),
+                    season=listing.season_category,
+                    model_version=str(MODEL_METADATA.get('version', '2.0')),
                     prediction_timestamp=datetime.now(timezone.utc).isoformat()
                 )
             )

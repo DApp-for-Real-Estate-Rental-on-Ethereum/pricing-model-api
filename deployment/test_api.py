@@ -20,7 +20,7 @@ def test_root_endpoint(client):
     assert response.status_code == 200
     data = response.json()
     assert data["service"] == "Morocco Airbnb Dynamic Pricing API"
-    assert data["version"] == "1.0.0"
+    assert data["version"] == "2.0.0"
     assert "endpoints" in data
 
 
@@ -47,21 +47,18 @@ def test_model_info(client):
 def test_single_prediction_valid(client):
     """Test single prediction with valid input."""
     listing = {
-        "city": "casablanca",
-        "period": "summer",
-        "geo_cluster": 1,
+        "stay_length_nights": 5,
+        "discount_rate": 0.1,
+        "bedroom_count": 2.0,
+        "bed_count": 3.0,
         "rating_value": 4.8,
         "rating_count": 50,
-        "rating_density": 1.0,
-        "has_rating": 1,
-        "badge_superhost": False,
-        "badge_guest_favorite": False,
-        "badge_top_x": False,
-        "any_badge": 0,
-        "dist_to_center": 0.05,
-        "struct_bedrooms": 2.0,
-        "struct_bathrooms": 1.0,
-        "struct_surface_m2": 80.0
+        "image_count": 15,
+        "badge_count": 1,
+        "review_density": 0.8,
+        "quality_proxy": 0.75,
+        "city": "casablanca",
+        "season_category": "summer"
     }
     
     response = client.post("/predict", json=listing)
@@ -77,21 +74,18 @@ def test_single_prediction_valid(client):
 def test_prediction_invalid_city(client):
     """Test prediction with invalid city."""
     listing = {
-        "city": "paris",  # Invalid city
-        "period": "summer",
-        "geo_cluster": 1,
+        "stay_length_nights": 5,
+        "discount_rate": 0.1,
+        "bedroom_count": 2.0,
+        "bed_count": 3.0,
         "rating_value": 4.8,
         "rating_count": 50,
-        "rating_density": 1.0,
-        "has_rating": 1,
-        "badge_superhost": False,
-        "badge_guest_favorite": False,
-        "badge_top_x": False,
-        "any_badge": 0,
-        "dist_to_center": 0.05,
-        "struct_bedrooms": 2.0,
-        "struct_bathrooms": 1.0,
-        "struct_surface_m2": 80.0
+        "image_count": 15,
+        "badge_count": 1,
+        "review_density": 0.8,
+        "quality_proxy": 0.75,
+        "city": "paris",  # Invalid city
+        "season_category": "summer"
     }
     
     response = client.post("/predict", json=listing)
@@ -103,38 +97,32 @@ def test_batch_prediction(client):
     listings = {
         "listings": [
             {
-                "city": "casablanca",
-                "period": "summer",
-                "geo_cluster": 1,
+                "stay_length_nights": 5,
+                "discount_rate": 0.1,
+                "bedroom_count": 2.0,
+                "bed_count": 3.0,
                 "rating_value": 4.8,
                 "rating_count": 50,
-                "rating_density": 1.0,
-                "has_rating": 1,
-                "badge_superhost": True,
-                "badge_guest_favorite": False,
-                "badge_top_x": False,
-                "any_badge": 1,
-                "dist_to_center": 0.05,
-                "struct_bedrooms": 2.0,
-                "struct_bathrooms": 1.0,
-                "struct_surface_m2": 80.0
+                "image_count": 15,
+                "badge_count": 1,
+                "review_density": 0.8,
+                "quality_proxy": 0.75,
+                "city": "casablanca",
+                "season_category": "summer"
             },
             {
-                "city": "marrakech",
-                "period": "march",
-                "geo_cluster": 0,
+                "stay_length_nights": 3,
+                "discount_rate": 0.0,
+                "bedroom_count": 3.0,
+                "bed_count": 4.0,
                 "rating_value": 5.0,
                 "rating_count": 100,
-                "rating_density": 2.0,
-                "has_rating": 1,
-                "badge_superhost": True,
-                "badge_guest_favorite": True,
-                "badge_top_x": False,
-                "any_badge": 1,
-                "dist_to_center": 0.01,
-                "struct_bedrooms": 3.0,
-                "struct_bathrooms": 2.0,
-                "struct_surface_m2": 120.0
+                "image_count": 20,
+                "badge_count": 2,
+                "review_density": 1.2,
+                "quality_proxy": 0.90,
+                "city": "marrakech",
+                "season_category": "march"
             }
         ]
     }
@@ -168,21 +156,18 @@ def test_city_insights_invalid(client):
 def test_prediction_confidence_intervals(client):
     """Test that confidence intervals are reasonable."""
     listing = {
-        "city": "agadir",
-        "period": "summer",
-        "geo_cluster": 2,
+        "stay_length_nights": 4,
+        "discount_rate": 0.0,
+        "bedroom_count": 1.0,
+        "bed_count": 2.0,
         "rating_value": 4.5,
         "rating_count": 25,
-        "rating_density": 0.8,
-        "has_rating": 1,
-        "badge_superhost": False,
-        "badge_guest_favorite": False,
-        "badge_top_x": False,
-        "any_badge": 0,
-        "dist_to_center": 0.1,
-        "struct_bedrooms": 1.0,
-        "struct_bathrooms": 1.0,
-        "struct_surface_m2": 50.0
+        "image_count": 10,
+        "badge_count": 0,
+        "review_density": 0.5,
+        "quality_proxy": 0.65,
+        "city": "agadir",
+        "season_category": "summer"
     }
     
     response = client.post("/predict", json=listing)
@@ -196,7 +181,7 @@ def test_prediction_confidence_intervals(client):
     
     assert ci_lower < predicted < ci_upper
     assert ci_lower >= 0  # Price can't be negative
-    assert (ci_upper - ci_lower) < 10000  # Interval shouldn't be too wide
+    assert (ci_upper - ci_lower) < 500  # Interval shouldn't be too wide (MAE ~55)
 
 
 if __name__ == "__main__":

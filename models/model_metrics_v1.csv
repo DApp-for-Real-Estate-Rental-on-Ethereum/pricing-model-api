@@ -1,2 +1,0 @@
-model,version,train_periods,val_period,mae_mad,mape_pct,best_params,feature_count,train_size,val_size
-GradientBoosting,1.0,"['march', 'april']",summer,2332.129383937941,5.7310408144090665,"{'regressor__learning_rate': 0.1, 'regressor__max_depth': 5, 'regressor__n_estimators': 200, 'regressor__subsample': 0.8}",15,2676,1287
