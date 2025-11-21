@@ -12,14 +12,14 @@ Model: pricing_gradient_boosting_v1.pkl
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from typing import List, Optional, Dict, Any
 import joblib
 import pandas as pd
 import numpy as np
 from pathlib import Path
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Configure logging
 logging.basicConfig(
@@ -81,13 +81,17 @@ class ListingFeatures(BaseModel):
     struct_bathrooms: Optional[float] = Field(1.0, ge=0.0, description="Number of bathrooms")
     struct_surface_m2: Optional[float] = Field(80.0, ge=0.0, description="Surface area in m²")
     
-    @validator('city')
+    model_config = ConfigDict(protected_namespaces=())
+    
+    @field_validator('city')
+    @classmethod
     def validate_city(cls, v):
         if v.lower() not in VALID_CITIES:
             raise ValueError(f"City must be one of: {', '.join(VALID_CITIES)}")
         return v.lower()
     
-    @validator('period')
+    @field_validator('period')
+    @classmethod
     def validate_period(cls, v):
         if v.lower() not in VALID_PERIODS:
             raise ValueError(f"Period must be one of: {', '.join(VALID_PERIODS)}")
@@ -96,6 +100,8 @@ class ListingFeatures(BaseModel):
 
 class PredictionResponse(BaseModel):
     """Response model for price prediction."""
+    
+    model_config = ConfigDict(protected_namespaces=())
     
     predicted_price_mad: float = Field(..., description="Predicted nightly price in MAD")
     predicted_price_usd: float = Field(..., description="Predicted nightly price in USD (approx)")
@@ -110,7 +116,7 @@ class PredictionResponse(BaseModel):
 class BatchPredictionRequest(BaseModel):
     """Request model for batch predictions."""
     
-    listings: List[ListingFeatures] = Field(..., max_items=100, description="List of listings (max 100)")
+    listings: List[ListingFeatures] = Field(..., max_length=100, description="List of listings (max 100)")
 
 
 class BatchPredictionResponse(BaseModel):
@@ -123,6 +129,8 @@ class BatchPredictionResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     """Health check response."""
+    
+    model_config = ConfigDict(protected_namespaces=())
     
     status: str
     model_loaded: bool
@@ -139,18 +147,42 @@ async def load_model():
     global MODEL, MODEL_METADATA
     
     try:
-        model_path = Path("models/pricing_gradient_boosting_v1.pkl")
-        metrics_path = Path("models/model_metrics_v1.csv")
+        # Try multiple possible paths for the model file
+        # This handles both running from project root and from deployment directory
+        possible_model_paths = [
+            Path("models/pricing_gradient_boosting_v1.pkl"),  # From project root
+            Path("../models/pricing_gradient_boosting_v1.pkl"),  # From deployment directory
+            Path(__file__).parent.parent / "models" / "pricing_gradient_boosting_v1.pkl"  # Absolute from this file
+        ]
         
-        if not model_path.exists():
-            raise FileNotFoundError(f"Model file not found: {model_path}")
+        model_path = None
+        for path in possible_model_paths:
+            if path.exists():
+                model_path = path
+                break
+        
+        if model_path is None:
+            raise FileNotFoundError(f"Model file not found in any of: {possible_model_paths}")
+        
+        # Same logic for metrics path
+        possible_metrics_paths = [
+            Path("models/model_metrics_v1.csv"),
+            Path("../models/model_metrics_v1.csv"),
+            Path(__file__).parent.parent / "models" / "model_metrics_v1.csv"
+        ]
+        
+        metrics_path = None
+        for path in possible_metrics_paths:
+            if path.exists():
+                metrics_path = path
+                break
         
         # Load model
         MODEL = joblib.load(model_path)
         logger.info(f"✅ Model loaded successfully from {model_path}")
         
         # Load metadata
-        if metrics_path.exists():
+        if metrics_path is not None:
             metrics_df = pd.read_csv(metrics_path)
             MODEL_METADATA = metrics_df.iloc[0].to_dict()
             logger.info(f"✅ Model metadata loaded: MAE={MODEL_METADATA.get('mae_mad', 'N/A'):.2f} MAD")
@@ -227,7 +259,7 @@ async def health_check():
         model_version=MODEL_METADATA.get('version', '1.0'),
         model_mae=MODEL_METADATA.get('mae_mad', 0.0),
         model_mape=MODEL_METADATA.get('mape_pct', 0.0),
-        timestamp=datetime.utcnow().isoformat()
+        timestamp=datetime.now(timezone.utc).isoformat()
     )
 
 
@@ -296,7 +328,7 @@ async def predict_price(listing: ListingFeatures):
             city=listing.city,
             period=listing.period,
             model_version=MODEL_METADATA.get('version', '1.0'),
-            prediction_timestamp=datetime.utcnow().isoformat()
+            prediction_timestamp=datetime.now(timezone.utc).isoformat()
         )
         
     except Exception as e:
@@ -315,7 +347,7 @@ async def batch_predict(request: BatchPredictionRequest):
     if MODEL is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
     
-    start_time = datetime.utcnow()
+    start_time = datetime.now(timezone.utc)
     predictions = []
     
     try:
@@ -343,12 +375,12 @@ async def batch_predict(request: BatchPredictionRequest):
                     city=listing.city,
                     period=listing.period,
                     model_version=MODEL_METADATA.get('version', '1.0'),
-                    prediction_timestamp=datetime.utcnow().isoformat()
+                    prediction_timestamp=datetime.now(timezone.utc).isoformat()
                 )
             )
         
         # Calculate processing time
-        processing_time = (datetime.utcnow() - start_time).total_seconds() * 1000
+        processing_time = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
         
         return BatchPredictionResponse(
             predictions=predictions,
