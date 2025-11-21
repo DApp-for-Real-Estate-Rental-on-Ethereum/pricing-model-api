@@ -5,16 +5,9 @@ Test suite for Morocco Airbnb Dynamic Pricing API
 import pytest
 from fastapi.testclient import TestClient
 from app import app
-import asyncio
 
-# Ensure model is loaded before running tests
-@pytest.fixture(scope="session", autouse=True)
-def setup_tests():
-    """Load model before running any tests."""
-    from app import load_model
-    asyncio.run(load_model())
-    yield
-
+# TestClient automatically triggers lifespan events (startup/shutdown)
+# No manual model loading needed anymore
 client = TestClient(app)
 
 
