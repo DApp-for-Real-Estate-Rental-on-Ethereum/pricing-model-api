@@ -269,13 +269,18 @@ PYEOF
                             -v $(pwd)/models:/app/models:ro \
                             medgm/morocco-pricing-api:${BUILD_NUMBER}
                         
-                        CONTAINER_IP=$(docker inspect morocco-pricing-api-test --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
-                        
                         # Wait for container to start (retry up to 10 times)
                         echo "⏳ Waiting for container to be ready..."
                         READY=0
                         for i in $(seq 1 10); do
-                            if curl -sf http://$CONTAINER_IP:8000/health > /dev/null; then
+                            if docker exec morocco-pricing-api-test python - <<'PY' >/dev/null 2>&1
+import urllib.request, sys
+try:
+    urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)
+except Exception:
+    sys.exit(1)
+PY
+                            then
                                 READY=1
                                 break
                             fi
@@ -285,34 +290,47 @@ PYEOF
                         
                         if [ "$READY" -ne 1 ]; then
                             echo "❌ Service failed to become ready after retries"
+                            docker logs morocco-pricing-api-test || true
                             exit 1
                         fi
                         
                         # Test health endpoint (now that it's up)
                         echo "Testing /health endpoint..."
-                        curl -sf http://$CONTAINER_IP:8000/health || exit 1
+                        docker exec morocco-pricing-api-test python - <<'PY'
+import urllib.request, json
+with urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5) as resp:
+    print(resp.read().decode())
+PY
                         
                         # Test prediction endpoint
                         echo "Testing /predict endpoint..."
-                        curl -sf -X POST http://$CONTAINER_IP:8000/predict \
-                            -H "Content-Type: application/json" \
-                            -d '{
-                                "city": "casablanca",
-                                "period": "summer",
-                                "geo_cluster": 1,
-                                "rating_value": 4.8,
-                                "rating_count": 50,
-                                "rating_density": 1.0,
-                                "has_rating": 1,
-                                "badge_superhost": false,
-                                "badge_guest_favorite": false,
-                                "badge_top_x": false,
-                                "any_badge": 0,
-                                "dist_to_center": 0.05,
-                                "struct_bedrooms": 2.0,
-                                "struct_bathrooms": 1.0,
-                                "struct_surface_m2": 80.0
-                            }' || exit 1
+                        docker exec morocco-pricing-api-test python - <<'PY'
+import json, urllib.request
+payload = {
+    "city": "casablanca",
+    "period": "summer",
+    "geo_cluster": 1,
+    "rating_value": 4.8,
+    "rating_count": 50,
+    "rating_density": 1.0,
+    "has_rating": 1,
+    "badge_superhost": False,
+    "badge_guest_favorite": False,
+    "badge_top_x": False,
+    "any_badge": 0,
+    "dist_to_center": 0.05,
+    "struct_bedrooms": 2.0,
+    "struct_bathrooms": 1.0,
+    "struct_surface_m2": 80.0
+}
+req = urllib.request.Request(
+    'http://127.0.0.1:8000/predict',
+    data=json.dumps(payload).encode('utf-8'),
+    headers={'Content-Type': 'application/json'}
+)
+with urllib.request.urlopen(req, timeout=5) as resp:
+    print(resp.read().decode())
+PY || exit 1
                         
                         echo " Container tests passed!"
                     '''
