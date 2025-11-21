@@ -238,8 +238,8 @@ PYEOF
                 script {
                     sh '''
                         echo "Building Docker image for pricing API..."
-                        cd deployment
-                        docker build -t medgm/morocco-pricing-api:${BUILD_NUMBER} .
+                        # Build from project root to include models directory
+                        docker build -f deployment/Dockerfile -t medgm/morocco-pricing-api:${BUILD_NUMBER} .
                         docker tag medgm/morocco-pricing-api:${BUILD_NUMBER} medgm/morocco-pricing-api:latest
                         
                         # Get git commit short hash
@@ -299,7 +299,7 @@ PYEOF
                                 "struct_surface_m2": 80.0
                             }' || exit 1
                         
-                        echo "✅ Container tests passed!"
+                        echo " Container tests passed!"
                     '''
                 }
             }
@@ -380,12 +380,12 @@ PYEOF
         }
         success {
             script {
-                echo "Morocco Pricing API pipeline completed successfully! 🎉"
+                echo "Morocco Pricing API pipeline completed successfully!"
             }
         }
         failure {
             script {
-                echo "Morocco Pricing API pipeline failed! ❌"
+                echo "Morocco Pricing API pipeline failed!"
             }
         }
     }

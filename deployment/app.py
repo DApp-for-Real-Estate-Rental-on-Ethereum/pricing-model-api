@@ -10,6 +10,7 @@ Version: 1.0.0
 Model: pricing_gradient_boosting_v1.pkl
 """
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, ConfigDict
@@ -61,7 +62,85 @@ VALID_CITIES = ['casablanca', 'marrakech', 'agadir', 'rabat', 'fes', 'tangier']
 VALID_PERIODS = ['march', 'april', 'summer']
 
 
-# Pydantic models for request/response validation
+# Lifespan context manager for startup/shutdown
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Handle application startup and shutdown events."""
+    global MODEL, MODEL_METADATA
+    
+    # STARTUP
+    try:
+        # Try multiple possible paths for the model file
+        possible_model_paths = [
+            Path("models/pricing_gradient_boosting_v1.pkl"),  # From project root
+            Path("../models/pricing_gradient_boosting_v1.pkl"),  # From deployment directory
+            Path(__file__).parent.parent / "models" / "pricing_gradient_boosting_v1.pkl"  # Absolute from this file
+        ]
+        
+        model_path = None
+        for path in possible_model_paths:
+            if path.exists():
+                model_path = path
+                break
+        
+        if model_path is None:
+            raise FileNotFoundError(f"Model file not found in any of: {possible_model_paths}")
+        
+        # Same logic for metrics path
+        possible_metrics_paths = [
+            Path("models/model_metrics_v1.csv"),
+            Path("../models/model_metrics_v1.csv"),
+            Path(__file__).parent.parent / "models" / "model_metrics_v1.csv"
+        ]
+        
+        metrics_path = None
+        for path in possible_metrics_paths:
+            if path.exists():
+                metrics_path = path
+                break
+        
+        # Load model
+        MODEL = joblib.load(model_path)
+        logger.info(f"✅ Model loaded successfully from {model_path}")
+        
+        # Load metadata
+        if metrics_path is not None:
+            metrics_df = pd.read_csv(metrics_path)
+            MODEL_METADATA = metrics_df.iloc[0].to_dict()
+            logger.info(f"✅ Model metadata loaded: MAE={MODEL_METADATA.get('mae_mad', 'N/A'):.2f} MAD")
+        else:
+            logger.warning("⚠️ Metrics file not found. Using default metadata.")
+            MODEL_METADATA = {
+                'model': 'GradientBoosting',
+                'version': '1.0',
+                'mae_mad': 2332.13,
+                'mape_pct': 5.73
+            }
+        
+        logger.info("🚀 Application startup complete - ready to serve predictions!")
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to load model: {str(e)}")
+        raise
+    
+    yield  # Application runs here
+    
+    # SHUTDOWN
+    logger.info("🛑 Shutting down - cleaning up resources...")
+    MODEL = None
+    MODEL_METADATA.clear()
+    logger.info("✅ Shutdown complete")
+
+
+# Initialize FastAPI app
+app = FastAPI(
+    title="Morocco Airbnb Dynamic Pricing API",
+    description="AI-powered nightly price predictions for Airbnb listings across Moroccan cities",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    lifespan=lifespan
+)
 class ListingFeatures(BaseModel):
     """Input features for a single listing prediction."""
     
@@ -140,67 +219,7 @@ class HealthResponse(BaseModel):
     timestamp: str
 
 
-# Startup event: Load model
-@app.on_event("startup")
-async def load_model():
-    """Load the trained model and metadata on startup."""
-    global MODEL, MODEL_METADATA
-    
-    try:
-        # Try multiple possible paths for the model file
-        # This handles both running from project root and from deployment directory
-        possible_model_paths = [
-            Path("models/pricing_gradient_boosting_v1.pkl"),  # From project root
-            Path("../models/pricing_gradient_boosting_v1.pkl"),  # From deployment directory
-            Path(__file__).parent.parent / "models" / "pricing_gradient_boosting_v1.pkl"  # Absolute from this file
-        ]
-        
-        model_path = None
-        for path in possible_model_paths:
-            if path.exists():
-                model_path = path
-                break
-        
-        if model_path is None:
-            raise FileNotFoundError(f"Model file not found in any of: {possible_model_paths}")
-        
-        # Same logic for metrics path
-        possible_metrics_paths = [
-            Path("models/model_metrics_v1.csv"),
-            Path("../models/model_metrics_v1.csv"),
-            Path(__file__).parent.parent / "models" / "model_metrics_v1.csv"
-        ]
-        
-        metrics_path = None
-        for path in possible_metrics_paths:
-            if path.exists():
-                metrics_path = path
-                break
-        
-        # Load model
-        MODEL = joblib.load(model_path)
-        logger.info(f"✅ Model loaded successfully from {model_path}")
-        
-        # Load metadata
-        if metrics_path is not None:
-            metrics_df = pd.read_csv(metrics_path)
-            MODEL_METADATA = metrics_df.iloc[0].to_dict()
-            logger.info(f"✅ Model metadata loaded: MAE={MODEL_METADATA.get('mae_mad', 'N/A'):.2f} MAD")
-        else:
-            logger.warning("⚠️ Metrics file not found. Using default metadata.")
-            MODEL_METADATA = {
-                'model': 'GradientBoosting',
-                'version': '1.0',
-                'mae_mad': 2332.13,
-                'mape_pct': 5.73
-            }
-        
-    except Exception as e:
-        logger.error(f"❌ Failed to load model: {str(e)}")
-        raise
-
-
-# Helper function: Prepare features for prediction
+# Pydantic models for request/response validation
 def prepare_features(listing: ListingFeatures) -> pd.DataFrame:
     """Convert ListingFeatures to DataFrame with proper dtypes."""
     
