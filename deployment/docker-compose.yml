@@ -8,12 +8,12 @@ services:
       - "8000:8000"
     environment:
       - LOG_LEVEL=info
-      - MODEL_PATH=/app/models/pricing_gradient_boosting_v1.pkl
+      - MODEL_PATH=/app/models/pricing_model_randomforest.pkl
     volumes:
-      - ./models:/app/models:ro
+      - ../models:/app/models:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
       interval: 30s
       timeout: 10s
       retries: 3

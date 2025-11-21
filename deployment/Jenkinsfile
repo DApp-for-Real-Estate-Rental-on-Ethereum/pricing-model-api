@@ -33,7 +33,7 @@ pipeline {
                             ls -la deployment/
                             exit 1
                         fi
-                        if [ ! -f models/pricing_gradient_boosting_v1.pkl ]; then
+                        if [ ! -f models/pricing_model_randomforest.pkl ]; then
                             echo "ERROR: Model file not found!"
                             echo "Available model files:"
                             ls -la models/
@@ -200,7 +200,7 @@ pipeline {
 import joblib
 import os
 
-model_path = 'models/pricing_gradient_boosting_v1.pkl'
+model_path = 'models/pricing_model_randomforest.pkl'
 print('Loading model from:', model_path)
 
 if not os.path.exists(model_path):
@@ -307,21 +307,18 @@ PY
                         docker exec morocco-pricing-api-test python - <<'PY'
 import json, urllib.request
 payload = {
-    "city": "casablanca",
-    "period": "summer",
-    "geo_cluster": 1,
+    "stay_length_nights": 5,
+    "discount_rate": 0.0,
+    "bedroom_count": 2.0,
+    "bed_count": 3.0,
     "rating_value": 4.8,
     "rating_count": 50,
-    "rating_density": 1.0,
-    "has_rating": 1,
-    "badge_superhost": False,
-    "badge_guest_favorite": False,
-    "badge_top_x": False,
-    "any_badge": 0,
-    "dist_to_center": 0.05,
-    "struct_bedrooms": 2.0,
-    "struct_bathrooms": 1.0,
-    "struct_surface_m2": 80.0
+    "image_count": 15,
+    "badge_count": 2,
+    "review_density": 1.2,
+    "quality_proxy": 0.85,
+    "city": "casablanca",
+    "season_category": "summer"
 }
 req = urllib.request.Request(
     'http://127.0.0.1:8000/predict',

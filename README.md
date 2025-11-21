@@ -1,290 +1,510 @@
 # Morocco Airbnb Dynamic Pricing API
 
-AI-powered dynamic pricing model for Airbnb listings across Moroccan cities (Casablanca, Marrakech, Agadir, Rabat, Fes, Tangier).
-
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
-[![Python](https://img.shields.io/badge/python-3.12-blue)]()
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.104.1-009688)]()
-[![Docker](https://img.shields.io/badge/docker-ready-2496ED)]()
-[![License](https://img.shields.io/badge/license-MIT-green)]()
+[![Python Version](https://img.shields.io/badge/python-3.12-blue)]()
+[![Model Version](https://img.shields.io/badge/model-v2.0-orange)]()
+[![Docker](https://img.shields.io/badge/docker-ready-blue)]()
 
-## 🎯 Features
+AI-powered dynamic pricing microservice for Airbnb listings across Moroccan cities. Predicts optimal nightly prices using a Random Forest model trained on 1,656+ real listings.
 
-- **5.73% MAPE Accuracy**: Production-grade GradientBoosting model
-- **City-Specific Intelligence**: Tailored recommendations for 6 Moroccan markets
-- **RESTful API**: FastAPI with automatic OpenAPI documentation
-- **Batch Processing**: Handle up to 100 listings per request
-- **SHAP Explainability**: Transparent feature attribution
-- **Docker Ready**: One-command deployment
-- **CI/CD Pipeline**: Jenkins automation with testing & security scans
+## Overview
 
-## 📊 Model Performance
+This API delivers real-time price predictions for short-term rental properties in Morocco's major cities. Built with **FastAPI** and powered by a **Random Forest** machine learning model achieving **55.33 MAD mean absolute error** (~$5.50 USD).
 
-| Metric | Value |
-|--------|-------|
-| **MAE** | 2,332 MAD (~$230 USD) |
-| **MAPE** | 5.73% |
-| **Training Set** | 2,676 listings (March + April) |
-| **Validation Set** | 1,287 listings (Summer) |
-| **Cities Covered** | 6 (Casablanca, Marrakech, Agadir, Rabat, Fes, Tangier) |
+### Key Features
 
-## 🚀 Quick Start
+- **Fast Predictions**: Single prediction <50ms, batch processing up to 100 listings
+- **High Accuracy**: MAE of 55.33 MAD with R² of 0.5499
+- **Multi-City Support**: Casablanca, Marrakech, Agadir, Rabat, Fes, Tangier
+- **Seasonal Intelligence**: Dynamic pricing for different seasons
+- **Production Ready**: Docker deployment, CI/CD pipeline, comprehensive tests
+- **Model Transparency**: Feature importance analysis and confidence intervals
+
+---
+
+## Quick Start
 
 ### Using Docker (Recommended)
 
 ```bash
-# Clone the repository
-git clone git@github.com:DApp-for-Real-Estate-Rental-on-Ethereum/pricing-model-api.git
-cd pricing-model-api
+# Pull the latest image
+docker pull medgm/morocco-pricing-api:latest
 
-# Start the API
-cd deployment
-docker-compose up -d
+# Run the container
+docker run -d \
+  --name pricing-api \
+  -p 8000:8000 \
+  -v $(pwd)/models:/app/models:ro \
+  medgm/morocco-pricing-api:latest
 
-# Verify it's running
+# Test the API
 curl http://localhost:8000/health
 ```
 
-### Manual Setup
+### Using Docker Compose
 
 ```bash
+cd deployment
+docker-compose up -d
+```
+
+### Local Development
+
+```bash
+# Clone the repository
+git clone https://github.com/DApp-for-Real-Estate-Rental-on-Ethereum/pricing-model-api.git
+cd pricing-model-api
+
+# Create virtual environment
+python3.12 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
 # Install dependencies
 pip install -r deployment/requirements.txt
 
 # Run the API
 cd deployment
-uvicorn app:app --host 0.0.0.0 --port 8000
-
-# Access the API
-open http://localhost:8000/docs
+uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 
-## 📖 API Documentation
-
-### Endpoints
-
-- **`GET /`** - API information
-- **`GET /health`** - Health check
-- **`GET /model-info`** - Model metadata
-- **`POST /predict`** - Single listing prediction
-- **`POST /batch-predict`** - Batch predictions (up to 100)
-- **`GET /city-insights/{city}`** - City-specific recommendations
-
-### Example Request
-
-```bash
-curl -X POST http://localhost:8000/predict \
-  -H "Content-Type: application/json" \
-  -d '{
-    "city": "casablanca",
-    "period": "summer",
-    "geo_cluster": 1,
-    "rating_value": 4.8,
-    "rating_count": 50,
-    "rating_density": 1.0,
-    "has_rating": 1,
-    "badge_superhost": false,
-    "badge_guest_favorite": false,
-    "badge_top_x": false,
-    "any_badge": 0,
-    "dist_to_center": 0.05,
-    "struct_bedrooms": 2.0,
-    "struct_bathrooms": 1.0,
-    "struct_surface_m2": 80.0
-  }'
-```
-
-### Example Response
-
-```json
-{
-  "predicted_price_mad": 50159.0,
-  "predicted_price_usd": 5016.0,
-  "confidence_interval_lower": 47827.0,
-  "confidence_interval_upper": 52491.0,
-  "city": "casablanca",
-  "period": "summer",
-  "model_version": "1.0"
-}
-```
-
-## 🏗️ Project Structure
-
-```
-pricing-model-api/
-├── deployment/
-│   ├── app.py                  # FastAPI application
-│   ├── requirements.txt        # Python dependencies
-│   ├── Dockerfile             # Container definition
-│   ├── docker-compose.yml     # Docker orchestration
-│   ├── test_api.py            # Test suite
-│   ├── Jenkinsfile            # CI/CD pipeline
-│   └── deployment_report.md   # Technical documentation
-│
-├── models/
-│   ├── pricing_gradient_boosting_v1.pkl  # Trained model
-│   └── model_metrics_v1.csv              # Performance metrics
-│
-├── data/
-│   └── used_or_will_be_used/
-│       ├── all_listings_clean.csv   # Training data (3,963 listings)
-│       └── houses_data_eng.csv      # Structural features (4,675 properties)
-│
-└── README.md
-```
-
-## 🧪 Testing
-
-```bash
-# Run unit tests
-cd deployment
-pytest test_api.py -v
-
-# Run with coverage
-pytest --cov=app --cov-report=html test_api.py
-
-# Load testing
-pip install locust
-locust -f locustfile.py --host http://localhost:8000
-```
-
-## 🔄 CI/CD Pipeline
-
-The Jenkins pipeline includes:
-
-1. **Code Quality**: Linting (flake8, black)
-2. **Security Scanning**: Safety, Bandit
-3. **Model Validation**: Verify model can be loaded
-4. **Unit Tests**: Pytest with coverage
-5. **Docker Build**: Multi-stage build
-6. **Container Testing**: Health checks & API tests
-7. **Registry Push**: Docker Hub/private registry
-8. **Deployment**: Staging → Production (with approval)
-9. **Performance Testing**: Locust load tests
-
-### Jenkins Setup
-
-1. Create a new Pipeline job in Jenkins
-2. Configure Git repository: `git@github.com:DApp-for-Real-Estate-Rental-on-Ethereum/pricing-model-api.git`
-3. Set Pipeline script path: `deployment/Jenkinsfile`
-4. Add credentials:
-   - `docker-hub-credentials`: Docker registry credentials
-5. Configure webhooks for automatic builds
-
-## 🌍 City-Specific Insights
-
-### Casablanca (Business Hub)
-- **Average Price**: 49,259 MAD
-- **Key Drivers**: City premium (+4,652 MAD), rating density
-- **Recommendation**: Focus on ratings over location
-
-### Marrakech (Tourist Destination)
-- **Average Price**: 46,685 MAD
-- **Key Drivers**: Location (+1,791 MAD), property size
-- **Recommendation**: Prioritize Medina proximity
-
-### Agadir (Beach Resort)
-- **Average Price**: 41,694 MAD
-- **Key Drivers**: Rating quality (+19% uplift), trust signals
-- **Recommendation**: Invest in reviews & Superhost
-
-### Rabat (Capital/Admin)
-- **Average Price**: 40,959 MAD
-- **Key Drivers**: Superhost badge (+5.5%), credentials
-- **Recommendation**: Professional amenities matter
-
-## 📈 Performance Benchmarks
-
-- **Response Time**: <100ms (p95)
-- **Throughput**: 100+ requests/sec
-- **Memory Usage**: ~500MB
-- **Startup Time**: <10s
-
-## 🔐 Security
-
-- Non-root Docker user
-- Input validation with Pydantic
-- Dependency scanning with Safety
-- Code security checks with Bandit
-- CORS configuration
-- Rate limiting (recommended for production)
-
-## 🛠️ Development
-
-```bash
-# Install development dependencies
-pip install -r deployment/requirements.txt
-pip install pytest black flake8 locust
-
-# Format code
-black deployment/app.py
-
-# Lint
-flake8 deployment/app.py --max-line-length=120
-
-# Type checking
-mypy deployment/app.py
-```
-
-## 📝 Environment Variables
-
-```bash
-# Optional configuration
-LOG_LEVEL=info                # Logging level
-MODEL_PATH=/app/models/...    # Custom model path
-MAX_BATCH_SIZE=100            # Max batch prediction size
-```
-
-## 🚢 Deployment Options
-
-### Docker Compose (Single Server)
-```bash
-docker-compose up -d
-```
-
-### Kubernetes (Production)
-```bash
-kubectl apply -f k8s/deployment.yaml
-```
-
-### AWS Elastic Beanstalk
-```bash
-eb init
-eb create pricing-api-prod
-```
-
-## 📊 Monitoring
-
-- **Health Check**: `GET /health`
-- **Metrics**: Prometheus-compatible (add `prometheus-fastapi-instrumentator`)
-- **Logging**: Structured JSON logs
-- **Tracing**: Add OpenTelemetry for distributed tracing
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see LICENSE file for details.
-
-## 🙏 Acknowledgments
-
-- Training data: Airbnb Morocco (6 cities, 3,963 listings)
-- Feature enrichment: Housing portal data (4,675 properties)
-- ML framework: scikit-learn GradientBoosting
-- Explainability: SHAP (SHapley Additive exPlanations)
-
-## 📧 Contact
-
-- **Project Repository**: [GitHub](https://github.com/DApp-for-Real-Estate-Rental-on-Ethereum/pricing-model-api)
-- **API Documentation**: http://localhost:8000/docs
-- **Technical Report**: [deployment_report.md](deployment/deployment_report.md)
+Access the interactive API docs at: **http://localhost:8000/docs**
 
 ---
 
-**Built with ❤️ for the Moroccan rental market**
+## Model Performance
+
+### Model v2.0 - RandomForest (Current)
+
+| Metric | Value | Description |
+|--------|-------|-------------|
+| **MAE** | 55.33 MAD | Mean Absolute Error (~$5.50 USD) |
+| **RMSE** | 71.79 MAD | Root Mean Squared Error |
+| **R²** | 0.5499 | Explains 55% of price variance |
+| **Train Size** | 1,324 listings | 80% split |
+| **Test Size** | 332 listings | 20% split |
+
+### Model Comparison (Training Phase)
+
+We evaluated 3 candidate models:
+
+| Model | Test MAE | Test RMSE | Test R² | Rank |
+|-------|----------|-----------|---------|------|
+| **RandomForest** ⭐ | **55.33** | 71.79 | 0.5499 | 🥇 |
+| XGBoost | 56.01 | 71.33 | **0.5556** | 🥈 |
+| GradientBoosting | 56.32 | 72.03 | 0.5468 | 🥉 |
+
+**Champion Model**: RandomForest selected for best MAE and balanced performance.
+
+---
+
+## API Endpoints
+
+### Health Check
+```http
+GET /health
+```
+Returns service health status and model metrics.
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "model_loaded": true,
+  "model_version": "2.0",
+  "model_mae": 55.33,
+  "model_r2": 0.5499,
+  "timestamp": "2025-11-21T19:45:00Z"
+}
+```
+
+### Single Prediction
+```http
+POST /predict
+```
+
+**Request Body:**
+```json
+{
+  "stay_length_nights": 5,
+  "discount_rate": 0.0,
+  "bedroom_count": 2,
+  "bed_count": 3,
+  "rating_value": 4.8,
+  "rating_count": 50,
+  "image_count": 15,
+  "badge_count": 2,
+  "review_density": 1.2,
+  "quality_proxy": 0.85,
+  "city": "casablanca",
+  "season_category": "summer"
+}
+```
+
+**Response:**
+```json
+{
+  "predicted_price_mad": 425.50,
+  "predicted_price_usd": 42.55,
+  "confidence_interval_lower": 370.17,
+  "confidence_interval_upper": 480.83,
+  "city": "casablanca",
+  "season": "summer",
+  "model_version": "2.0",
+  "prediction_timestamp": "2025-11-21T19:45:00Z"
+}
+```
+
+### Batch Prediction
+```http
+POST /batch-predict
+```
+
+**Request Body:**
+```json
+{
+  "listings": [
+    {
+      "stay_length_nights": 3,
+      "discount_rate": 0.1,
+      "bedroom_count": 1,
+      "bed_count": 2,
+      "rating_value": 4.5,
+      "rating_count": 25,
+      "image_count": 10,
+      "badge_count": 1,
+      "review_density": 0.8,
+      "quality_proxy": 0.75,
+      "city": "marrakech",
+      "season_category": "april"
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "predictions": [...],
+  "total_listings": 1,
+  "processing_time_ms": 45.23
+}
+```
+
+### Model Information
+```http
+GET /model-info
+```
+
+Returns detailed model metadata, feature schema, and performance metrics.
+
+---
+
+## Model Features
+
+The model uses **12 features** to predict nightly prices:
+
+### Numeric Features (10)
+
+| Feature | Description | Example |
+|---------|-------------|---------|
+| `stay_length_nights` | Length of stay | 3 |
+| `discount_rate` | Applied discount | 0.15 (15%) |
+| `bedroom_count` | Number of bedrooms | 2.0 |
+| `bed_count` | Number of beds | 3.0 |
+| `rating_value` | Average rating | 4.8 |
+| `rating_count` | Total reviews | 50 |
+| `image_count` | Property photos | 15 |
+| `badge_count` | Total badges | 2 |
+| `review_density` | Review frequency metric | 1.2 |
+| `quality_proxy` | Overall quality score | 0.85 |
+
+### Categorical Features (2)
+
+| Feature | Valid Values |
+|---------|-------------|
+| `city` | casablanca, marrakech, agadir, rabat, fes, tangier |
+| `season_category` | march, april, summer, other |
+
+---
+
+## Feature Importance
+
+Top price drivers (Random Forest feature importance):
+
+1. **Season Category (other)** - 52.4%
+2. **Rating Value** - 7.6%
+3. **City (Casablanca)** - 7.3%
+4. **Discount Rate** - 6.1%
+5. **Bed Count** - 4.5%
+6. **Review Density** - 3.8%
+7. **Rating Count** - 3.7%
+8. **Bedroom Count** - 2.5%
+9. **City (Marrakech)** - 2.3%
+10. **City (Fes)** - 2.0%
+
+**Key Insight**: Seasonality dominates pricing (52%), followed by guest satisfaction metrics (rating_value, rating_count).
+
+---
+
+## City-Specific Insights
+
+### Casablanca
+- **Market Type**: Business Hub
+- **Avg Price**: 440 MAD/night
+- **Key Drivers**: Rating density, quality metrics
+- **Recommendation**: Focus on building strong review profiles
+
+### Marrakech
+- **Market Type**: Tourist Destination  
+- **Avg Price**: 465 MAD/night
+- **Key Drivers**: Location, property character, ratings
+- **Recommendation**: Invest in authentic features and size
+
+### Agadir
+- **Market Type**: Beach Resort
+- **Avg Price**: 420 MAD/night
+- **Key Drivers**: Ratings (highest ROI), trust signals
+- **Recommendation**: Build rating density aggressively
+
+### Rabat
+- **Market Type**: Capital/Administrative
+- **Avg Price**: 410 MAD/night
+- **Key Drivers**: Professional credentials, consistency
+- **Recommendation**: Emphasize reliability and business amenities
+
+### Fes
+- **Market Type**: Cultural Heritage
+- **Avg Price**: 370 MAD/night
+- **Key Drivers**: Cultural authenticity, Medina proximity
+- **Recommendation**: Highlight heritage value
+
+### Tangier
+- **Market Type**: Port City/Gateway
+- **Avg Price**: 420 MAD/night
+- **Key Drivers**: Rating quality, port access
+- **Recommendation**: Balance tourist and business needs
+
+---
+
+## Data Pipeline
+
+### ETL Process
+Located in `notebooks/airbnb_pricing_pipeline.ipynb`:
+
+1. **Data Ingestion**: 19 JSON files from `data/raw/` (March, April, Summer)
+2. **Data Cleaning**: 5,011 raw listings → 1,656 clean listings
+3. **Feature Engineering**: 34 engineered features from nested JSON
+4. **Price Normalization**: Extract per-night price from breakdown field
+5. **EDA & Validation**: Statistical analysis and quality checks
+
+### Model Training
+Located in `notebooks/pricing_model_training.ipynb`:
+
+1. **Feature Selection**: 12 predictive features
+2. **Preprocessing**: StandardScaler + OneHotEncoder pipeline
+3. **Model Training**: GridSearchCV with 5-fold cross-validation
+4. **Model Comparison**: 3 algorithms evaluated
+5. **Model Selection**: RandomForest chosen as champion
+6. **Model Persistence**: Saved to `models/pricing_model_randomforest.pkl`
+
+---
+
+## Testing
+
+### Run Tests Locally
+
+```bash
+cd deployment
+pytest test_api.py -v
+```
+
+**Test Coverage:**
+- ✅ Root endpoint
+- ✅ Health check
+- ✅ Model info
+- ✅ Single prediction (valid inputs)
+- ✅ Invalid city handling
+- ✅ Batch predictions
+- ✅ City insights
+- ✅ Confidence intervals
+
+**Result**: 9/9 tests passing ✅
+
+---
+
+## Deployment
+
+### CI/CD Pipeline (Jenkins)
+
+The project includes a complete Jenkins pipeline with the following stages:
+
+1. **Checkout** - Clone repository
+2. **Verify Project Layout** - Validate structure and model files
+3. **Build & Test** - Run pytest in Docker container
+4. **Code Quality Analysis** - SonarQube scanning
+5. **Security Scan** - Safety + Bandit security checks
+6. **Model Validation** - Verify model integrity
+7. **Build Docker Image** - Create production image
+8. **Test Docker Container** - Integration tests
+9. **Push to Docker Hub** - Publish images
+10. **Deploy to Local Registry** - Local deployment
+
+### Environment Variables
+
+```bash
+# Optional: Override model path
+MODEL_PATH=/app/models/pricing_model_randomforest.pkl
+
+# Optional: Set log level
+LOG_LEVEL=info
+```
+
+### Docker Image Tags
+
+- `medgm/morocco-pricing-api:latest` - Latest stable version
+- `medgm/morocco-pricing-api:<build-number>` - Specific build
+- `medgm/morocco-pricing-api:<git-commit-hash>` - Git commit version
+
+---
+
+## Project Structure
+
+```
+pricing-model-api/
+├── data/
+│   ├── raw/                           # Raw JSON listings
+│   ├── processed/                     # Processed datasets
+│   └── used_or_will_be_used/
+│       └── all_listings_clean.csv     # Clean dataset (1,656 listings)
+├── deployment/
+│   ├── Dockerfile                     # Production Docker image
+│   ├── Jenkinsfile                    # CI/CD pipeline
+│   ├── app.py                         # FastAPI application
+│   ├── docker-compose.yml             # Docker Compose config
+│   ├── requirements.txt               # Python dependencies
+│   └── test_api.py                    # API tests
+├── models/
+│   ├── pricing_model_randomforest.pkl           # Trained model (4.6 MB)
+│   └── pricing_model_randomforest_metadata.pkl  # Model metadata
+├── notebooks/
+│   ├── airbnb_pricing_pipeline.ipynb  # ETL pipeline
+│   └── pricing_model_training.ipynb   # Model training
+└── README.md                          # This file
+```
+
+---
+
+## Technology Stack
+
+### Backend
+- **Framework**: FastAPI 0.115.6
+- **Server**: Uvicorn (ASGI)
+- **Validation**: Pydantic v2
+
+### Machine Learning
+- **Algorithm**: RandomForestRegressor
+- **Library**: scikit-learn 1.7.2
+- **Model Size**: 4.6 MB
+- **Preprocessing**: ColumnTransformer (StandardScaler + OneHotEncoder)
+
+### Data Processing
+- **pandas** 2.3.3 - Data manipulation
+- **numpy** 2.3.5 - Numerical operations
+- **joblib** 1.4.2 - Model serialization
+
+### Development
+- **Python**: 3.12.3
+- **Testing**: pytest 9.0.1
+- **Security**: Bandit, Safety
+- **Code Quality**: SonarQube
+
+### DevOps
+- **Containerization**: Docker
+- **Orchestration**: Docker Compose
+- **CI/CD**: Jenkins
+- **Registry**: Docker Hub, Local Registry
+
+---
+
+## Security
+
+### Model Security
+- Model files mounted as read-only in containers
+- Non-root user execution in Docker
+- Health checks for container monitoring
+
+### API Security
+- Input validation via Pydantic
+- CORS middleware configured
+- Rate limiting ready (configure as needed)
+
+### Dependencies
+- Regular security scans via Safety
+- Bandit static analysis for Python code
+- Automated dependency updates
+
+---
+
+## Performance Benchmarks
+
+### API Response Times
+- Single prediction: **~45ms**
+- Batch (10 listings): **~120ms**
+- Batch (100 listings): **~850ms**
+
+### Resource Usage
+- Memory: ~250 MB (container)
+- CPU: <5% idle, ~20% under load
+- Startup time: ~3 seconds
+
+---
+
+## Troubleshooting
+
+### Model Not Loading
+
+**Error**: `Model file not found`
+
+**Solution**: 
+```bash
+# Ensure model files exist
+ls -lh models/
+
+# Should see:
+# pricing_model_randomforest.pkl (4.6 MB)
+# pricing_model_randomforest_metadata.pkl (414 bytes)
+```
+
+### Container Health Check Failing
+
+**Error**: `Container unhealthy`
+
+**Solution**:
+```bash
+# Check logs
+docker logs morocco-pricing-api
+
+# Test health endpoint manually
+docker exec morocco-pricing-api curl http://localhost:8000/health
+```
+
+### Prediction Errors
+
+**Error**: `422 Unprocessable Entity`
+
+**Solution**: Verify all required features are provided with correct types and ranges.
+
+
+## Roadmap
+
+- [ ] Add more Moroccan cities (Essaouira, Chefchaouen, etc.)
+- [ ] Implement dynamic pricing strategies (surge pricing, last-minute discounts)
+- [ ] Add prediction explainability (SHAP values)
+- [ ] Multi-language support for API docs
+- [ ] GraphQL API endpoint
+- [ ] Real-time model retraining pipeline
+- [ ] A/B testing framework for model versions
+
+---
+
+**Built with ❤️ for the Moroccan short-term rental market**
