@@ -269,11 +269,13 @@ PYEOF
                             -v $(pwd)/models:/app/models:ro \
                             medgm/morocco-pricing-api:${BUILD_NUMBER}
                         
+                        CONTAINER_IP=$(docker inspect morocco-pricing-api-test --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
+                        
                         # Wait for container to start (retry up to 10 times)
                         echo "⏳ Waiting for container to be ready..."
                         READY=0
                         for i in $(seq 1 10); do
-                            if curl -sf http://localhost:8888/health > /dev/null; then
+                            if curl -sf http://$CONTAINER_IP:8000/health > /dev/null; then
                                 READY=1
                                 break
                             fi
@@ -288,11 +290,11 @@ PYEOF
                         
                         # Test health endpoint (now that it's up)
                         echo "Testing /health endpoint..."
-                        curl -sf http://localhost:8888/health || exit 1
+                        curl -sf http://$CONTAINER_IP:8000/health || exit 1
                         
                         # Test prediction endpoint
                         echo "Testing /predict endpoint..."
-                        curl -sf -X POST http://localhost:8888/predict \
+                        curl -sf -X POST http://$CONTAINER_IP:8000/predict \
                             -H "Content-Type: application/json" \
                             -d '{
                                 "city": "casablanca",
