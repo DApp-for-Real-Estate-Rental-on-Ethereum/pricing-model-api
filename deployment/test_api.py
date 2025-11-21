@@ -6,12 +6,15 @@ import pytest
 from fastapi.testclient import TestClient
 from app import app
 
-# TestClient automatically triggers lifespan events (startup/shutdown)
-# No manual model loading needed anymore
-client = TestClient(app)
+
+@pytest.fixture(scope="session")
+def client():
+    """Provide a TestClient that ensures lifespan events run."""
+    with TestClient(app) as test_client:
+        yield test_client
 
 
-def test_root_endpoint():
+def test_root_endpoint(client):
     """Test root endpoint returns API information."""
     response = client.get("/")
     assert response.status_code == 200
@@ -21,7 +24,7 @@ def test_root_endpoint():
     assert "endpoints" in data
 
 
-def test_health_check():
+def test_health_check(client):
     """Test health check endpoint."""
     response = client.get("/health")
     assert response.status_code == 200
@@ -31,7 +34,7 @@ def test_health_check():
     assert data["model_loaded"] is True
 
 
-def test_model_info():
+def test_model_info(client):
     """Test model information endpoint."""
     response = client.get("/model-info")
     assert response.status_code == 200
@@ -41,7 +44,7 @@ def test_model_info():
     assert "performance" in data
 
 
-def test_single_prediction_valid():
+def test_single_prediction_valid(client):
     """Test single prediction with valid input."""
     listing = {
         "city": "casablanca",
@@ -71,7 +74,7 @@ def test_single_prediction_valid():
     assert data["city"] == "casablanca"
 
 
-def test_prediction_invalid_city():
+def test_prediction_invalid_city(client):
     """Test prediction with invalid city."""
     listing = {
         "city": "paris",  # Invalid city
@@ -95,7 +98,7 @@ def test_prediction_invalid_city():
     assert response.status_code == 422  # Validation error
 
 
-def test_batch_prediction():
+def test_batch_prediction(client):
     """Test batch prediction endpoint."""
     listings = {
         "listings": [
@@ -145,7 +148,7 @@ def test_batch_prediction():
     assert "processing_time_ms" in data
 
 
-def test_city_insights_casablanca():
+def test_city_insights_casablanca(client):
     """Test city insights for Casablanca."""
     response = client.get("/city-insights/casablanca")
     assert response.status_code == 200
@@ -156,13 +159,13 @@ def test_city_insights_casablanca():
     assert len(data["recommendations"]) > 0
 
 
-def test_city_insights_invalid():
+def test_city_insights_invalid(client):
     """Test city insights with invalid city."""
     response = client.get("/city-insights/invalid-city")
     assert response.status_code == 400
 
 
-def test_prediction_confidence_intervals():
+def test_prediction_confidence_intervals(client):
     """Test that confidence intervals are reasonable."""
     listing = {
         "city": "agadir",
