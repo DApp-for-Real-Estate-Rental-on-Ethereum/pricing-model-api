@@ -256,7 +256,7 @@ async def health_check():
     return HealthResponse(
         status="healthy" if MODEL is not None else "unhealthy",
         model_loaded=MODEL is not None,
-        model_version=MODEL_METADATA.get('version', '1.0'),
+        model_version=str(MODEL_METADATA.get('version', '1.0')),
         model_mae=MODEL_METADATA.get('mae_mad', 0.0),
         model_mape=MODEL_METADATA.get('mape_pct', 0.0),
         timestamp=datetime.now(timezone.utc).isoformat()
@@ -327,7 +327,7 @@ async def predict_price(listing: ListingFeatures):
             confidence_interval_upper=round(ci_upper, 2),
             city=listing.city,
             period=listing.period,
-            model_version=MODEL_METADATA.get('version', '1.0'),
+            model_version=str(MODEL_METADATA.get('version', '1.0')),
             prediction_timestamp=datetime.now(timezone.utc).isoformat()
         )
         
@@ -374,7 +374,7 @@ async def batch_predict(request: BatchPredictionRequest):
                     confidence_interval_upper=round(ci_upper, 2),
                     city=listing.city,
                     period=listing.period,
-                    model_version=MODEL_METADATA.get('version', '1.0'),
+                    model_version=str(MODEL_METADATA.get('version', '1.0')),
                     prediction_timestamp=datetime.now(timezone.utc).isoformat()
                 )
             )
