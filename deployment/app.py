@@ -50,12 +50,17 @@ async def lifespan(app: FastAPI):
     
     # STARTUP
     try:
-        # Try multiple possible paths for the tuned model file
+        # Try multiple possible paths for the model file (prioritize RandomForest - exists in GitHub)
         possible_model_paths = [
-            Path("models/tuned/xgboost_tuned.pkl"),  # From project root - TUNED MODEL
-            Path("../models/tuned/xgboost_tuned.pkl"),  # From deployment directory
-            Path(__file__).parent.parent / "models" / "tuned" / "xgboost_tuned.pkl",  # Absolute from this file
-            # Fallback to baseline model if tuned not found
+            # PRIMARY: RandomForest model (exists in GitHub)
+            Path("models/pricing_model_randomforest.pkl"),
+            Path("../models/pricing_model_randomforest.pkl"),
+            Path(__file__).parent.parent / "models" / "pricing_model_randomforest.pkl",
+            # SECONDARY: Tuned XGBoost (if available locally)
+            Path("models/tuned/xgboost_tuned.pkl"),
+            Path("../models/tuned/xgboost_tuned.pkl"),
+            Path(__file__).parent.parent / "models" / "tuned" / "xgboost_tuned.pkl",
+            # FALLBACK: Baseline XGBoost
             Path("models/pricing_model_xgboost.pkl"),
             Path("../models/pricing_model_xgboost.pkl"),
             Path(__file__).parent.parent / "models" / "pricing_model_xgboost.pkl"
@@ -72,10 +77,15 @@ async def lifespan(app: FastAPI):
         
         # Try to load metadata (optional - will use defaults if not found)
         possible_metadata_paths = [
-            Path("models/tuned/xgboost_tuned_metadata.pkl"),  # Tuned model metadata
+            # PRIMARY: RandomForest metadata
+            Path("models/pricing_model_randomforest_metadata.pkl"),
+            Path("../models/pricing_model_randomforest_metadata.pkl"),
+            Path(__file__).parent.parent / "models" / "pricing_model_randomforest_metadata.pkl",
+            # SECONDARY: Tuned XGBoost metadata
+            Path("models/tuned/xgboost_tuned_metadata.pkl"),
             Path("../models/tuned/xgboost_tuned_metadata.pkl"),
             Path(__file__).parent.parent / "models" / "tuned" / "xgboost_tuned_metadata.pkl",
-            # Fallback to baseline metadata
+            # FALLBACK: Baseline XGBoost metadata
             Path("models/pricing_model_xgboost_metadata.pkl"),
             Path("../models/pricing_model_xgboost_metadata.pkl"),
             Path(__file__).parent.parent / "models" / "pricing_model_xgboost_metadata.pkl"
