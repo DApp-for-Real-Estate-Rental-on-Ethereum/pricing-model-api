@@ -33,7 +33,7 @@ pipeline {
                             ls -la deployment/
                             exit 1
                         fi
-                        if [ ! -f models/pricing_model_randomforest.pkl ]; then
+                        if [ ! -f models/pricing_model_xgboost.pkl ]; then
                             echo "ERROR: Model file not found!"
                             echo "Available model files:"
                             ls -la models/
@@ -193,14 +193,14 @@ pipeline {
                         echo "Validating ML model..."
                         CONTAINER_ID=$(docker create -w /workspace python:3.12-slim sh -c "
                             echo 'Installing required packages...'
-                            pip install --no-cache-dir joblib scikit-learn pandas numpy
+                            pip install --no-cache-dir joblib scikit-learn pandas numpy xgboost
                             
                             echo 'Validating model file...'
                             python3 << 'PYEOF'
 import joblib
 import os
 
-model_path = 'models/pricing_model_randomforest.pkl'
+model_path = 'models/pricing_model_xgboost.pkl'
 print('Loading model from:', model_path)
 
 if not os.path.exists(model_path):
@@ -209,7 +209,7 @@ if not os.path.exists(model_path):
 
 model = joblib.load(model_path)
 print('Model loaded successfully:', type(model).__name__)
-print('Model size: {:.2f} MB'.format(os.path.getsize(model_path) / 1024 / 1024))
+print('Model size: {:.2f} KB'.format(os.path.getsize(model_path) / 1024))
 
 # Validate model has predict method
 if not hasattr(model, 'predict'):

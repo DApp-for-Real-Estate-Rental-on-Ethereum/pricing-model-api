@@ -19,8 +19,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY deployment/app.py .
 
-# Copy models directory
+# Copy models directory (including tuned models)
 COPY models/ models/
+# Verify tuned model exists
+RUN ls -la models/tuned/xgboost_tuned.pkl || (echo "ERROR: Tuned model not found!" && exit 1)
 
 # Create non-root user for security
 RUN useradd -m -u 1000 apiuser && chown -R apiuser:apiuser /app
