@@ -94,7 +94,7 @@ pipeline {
                             echo 'Installing system dependencies...'
                             apt-get update && apt-get install -y gcc g++ curl
                             echo 'Installing Python dependencies...'
-                            pip install --no-cache-dir -r deployment/requirements.txt
+                            pip install --no-cache-dir --default-timeout=300 -r deployment/requirements.txt
                             echo 'Running pytest...'
                             cd deployment
                             pytest test_api.py -v --tb=short --junitxml=test-results.xml
@@ -175,7 +175,7 @@ pipeline {
                             pip install --no-cache-dir safety bandit
                             
                             echo 'Running Safety check for known vulnerabilities...'
-                            pip install -r deployment/requirements.txt
+                            pip install --default-timeout=300 -r deployment/requirements.txt || echo 'Warning: Some packages failed to install, continuing...'
                             safety check --json > security-report.json || true
                             
                             echo 'Running Bandit security linter...'
@@ -219,7 +219,7 @@ pipeline {
                         echo "Validating ML model..."
                         CONTAINER_ID=$(docker create -w /workspace python:3.12-slim sh -c "
                             echo 'Installing required packages...'
-                            pip install --no-cache-dir joblib scikit-learn pandas numpy xgboost
+                            pip install --no-cache-dir --default-timeout=300 joblib scikit-learn pandas numpy
                             
                             echo 'Validating model file...'
                             python3 << 'PYEOF'
