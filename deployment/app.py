@@ -96,15 +96,56 @@ async def lifespan(app: FastAPI):
             MODEL_METADATA = joblib.load(metadata_path)
             logger.info(f"✅ Model metadata loaded: MAE={MODEL_METADATA.get('test_mae', 'N/A'):.2f} MAD")
         else:
-            logger.warning("⚠️ Metadata file not found. Using default metadata for tuned model.")
-            # Default metadata for XGBoost Tuned model (best performance)
-            MODEL_METADATA = {
-                'model_name': 'XGBoost Tuned',
-                'version': '2.1',
-                'test_mae': 48.55,  # Improved from 56.01 (baseline)
-                'test_rmse': 134.21,  # Improved from 71.33 (baseline)
-                'test_r2': 0.9142  # Improved from 0.5556 (baseline) - 91.42% variance explained
-            }
+            logger.warning("⚠️ Metadata file not found. Using default metadata based on model type.")
+            # Detect which model was loaded and use appropriate defaults
+            model_name_lower = str(model_path).lower()
+            if 'randomforest' in model_name_lower or 'random_forest' in model_name_lower:
+                # Check if it's tuned or baseline
+                if 'tuned' in model_name_lower:
+                    # Tuned RandomForest (better than baseline)
+                    MODEL_METADATA = {
+                        'model_name': 'RandomForest Tuned',
+                        'version': '1.1',
+                        'test_mae': 54.57,  # From tuning_comparison.csv
+                        'test_rmse': 186.92,
+                        'test_r2': 0.8335
+                    }
+                else:
+                    # Default metadata for RandomForest model (baseline - GitHub)
+                    MODEL_METADATA = {
+                        'model_name': 'RandomForest',
+                        'version': '1.0',
+                        'test_mae': 84.59,  # From model comparison
+                        'test_rmse': 172.22,
+                        'test_r2': 0.8586
+                    }
+            elif 'tuned' in model_name_lower and 'xgboost' in model_name_lower:
+                # XGBoost Tuned model (best performance)
+                MODEL_METADATA = {
+                    'model_name': 'XGBoost Tuned',
+                    'version': '2.1',
+                    'test_mae': 48.55,
+                    'test_rmse': 134.21,
+                    'test_r2': 0.9142
+                }
+            elif 'xgboost' in model_name_lower:
+                # Default metadata for XGBoost baseline
+                MODEL_METADATA = {
+                    'model_name': 'XGBoost',
+                    'version': '2.0',
+                    'test_mae': 56.01,
+                    'test_rmse': 71.33,
+                    'test_r2': 0.5556
+                }
+            else:
+                # Unknown model - use RandomForest defaults as safe fallback
+                MODEL_METADATA = {
+                    'model_name': 'Unknown Model',
+                    'version': '1.0',
+                    'test_mae': 84.59,
+                    'test_rmse': 172.22,
+                    'test_r2': 0.8586
+                }
         
         logger.info("🚀 Application startup complete - ready to serve predictions!")
         
@@ -216,7 +257,6 @@ class HealthResponse(BaseModel):
     timestamp: str
 
 
-# Pydantic models for request/response validation
 def prepare_features(listing: ListingFeatures) -> pd.DataFrame:
     """Convert ListingFeatures to DataFrame with proper dtypes."""
     
@@ -248,10 +288,11 @@ def prepare_features(listing: ListingFeatures) -> pd.DataFrame:
 @app.get("/", tags=["Root"])
 async def root():
     """Root endpoint with API information."""
+    model_info = f"{MODEL_METADATA.get('model_name', 'Unknown')} (MAE: {MODEL_METADATA.get('test_mae', 'N/A')} MAD)"
     return {
         "service": "Morocco Airbnb Dynamic Pricing API",
         "version": "2.1.0",
-        "model": "XGBoost Tuned (48.55 MAD MAE, 91.42% R²)",
+        "model": model_info,
         "status": "operational",
         "documentation": "/docs",
         "endpoints": {
@@ -267,7 +308,7 @@ async def root():
 async def health_check():
     """Health check endpoint for monitoring and load balancers."""
     
-        return HealthResponse(
+    return HealthResponse(
         status="healthy" if MODEL is not None else "unhealthy",
         model_loaded=MODEL is not None,
         model_version=str(MODEL_METADATA.get('version', '1.0')),
@@ -302,8 +343,8 @@ async def model_info():
         },
         "performance": {
             "test_mae": MODEL_METADATA.get('test_mae', 84.59),
-            "test_rmse": MODEL_METADATA.get('test_rmse', 134.21),
-            "test_r2": MODEL_METADATA.get('test_r2', 0.9142),
+            "test_rmse": MODEL_METADATA.get('test_rmse', 172.22),  # Default to RandomForest
+            "test_r2": MODEL_METADATA.get('test_r2', 0.8586),  # Default to RandomForest
             "train_size": MODEL_METADATA.get('train_size', 1324),
             "test_size": MODEL_METADATA.get('test_size', 332)
         }
