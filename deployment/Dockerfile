@@ -19,10 +19,18 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY deployment/app.py .
 
-# Copy models directory (including tuned models)
+# Copy models directory (including all models)
 COPY models/ models/
-# Verify tuned model exists
-RUN ls -la models/tuned/xgboost_tuned.pkl || (echo "ERROR: Tuned model not found!" && exit 1)
+# Verify at least one model exists (RandomForest is primary)
+RUN if [ ! -f models/pricing_model_randomforest.pkl ] && [ ! -f models/tuned/xgboost_tuned.pkl ] && [ ! -f models/pricing_model_xgboost.pkl ]; then \
+        echo "ERROR: No model file found!" && \
+        echo "Available files:" && \
+        ls -la models/ && \
+        exit 1; \
+    else \
+        echo "✅ Model file(s) found:" && \
+        ls -lh models/*.pkl models/tuned/*.pkl 2>/dev/null | head -5; \
+    fi
 
 # Create non-root user for security
 RUN useradd -m -u 1000 apiuser && chown -R apiuser:apiuser /app

@@ -2,12 +2,12 @@
 Dynamic Pricing API for Airbnb Listings in Morocco
 ===================================================
 
-FastAPI microservice for real-time nightly price predictions using the tuned
-XGBoost model (48.55 MAD MAE, 91.42% R²). Supports individual predictions and batch processing.
+FastAPI microservice for real-time nightly price predictions using RandomForest/XGBoost models.
+Supports individual predictions and batch processing.
 
 Author: AI-Powered Rental Platform
 Version: 2.1.0
-Model: xgboost_tuned.pkl (Tuned with hyperparameter optimization)
+Model: pricing_model_randomforest.pkl (Primary) or xgboost_tuned.pkl (if available)
 """
 
 from contextlib import asynccontextmanager
@@ -124,8 +124,8 @@ async def lifespan(app: FastAPI):
 # Initialize FastAPI app
 app = FastAPI(
     title="Morocco Airbnb Dynamic Pricing API",
-    description="AI-powered nightly price predictions for Airbnb listings across Moroccan cities using tuned XGBoost model (48.55 MAD MAE, 91.42% R²)",
-    version="2.1.0",  # Updated to reflect tuned model
+    description="AI-powered nightly price predictions for Airbnb listings across Moroccan cities using RandomForest/XGBoost models",
+    version="2.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan
@@ -267,12 +267,12 @@ async def root():
 async def health_check():
     """Health check endpoint for monitoring and load balancers."""
     
-    return HealthResponse(
+        return HealthResponse(
         status="healthy" if MODEL is not None else "unhealthy",
         model_loaded=MODEL is not None,
-        model_version=str(MODEL_METADATA.get('version', '2.1')),
-        model_mae=MODEL_METADATA.get('test_mae', 48.55),
-        model_r2=MODEL_METADATA.get('test_r2', 0.9142),
+        model_version=str(MODEL_METADATA.get('version', '1.0')),
+        model_mae=MODEL_METADATA.get('test_mae', 84.59),  # Default to RandomForest
+        model_r2=MODEL_METADATA.get('test_r2', 0.8586),  # Default to RandomForest
         timestamp=datetime.now(timezone.utc).isoformat()
     )
 
@@ -291,7 +291,7 @@ async def model_info():
         "valid_seasons": VALID_SEASONS,
         "model_pipeline": {
             "preprocessing": "ColumnTransformer (StandardScaler + OneHotEncoder)",
-            "algorithm": "XGBoostRegressor",
+            "algorithm": MODEL_METADATA.get('model_name', 'RandomForest'),
             "hyperparameters": {
                 "colsample_bytree": 1.0,
                 "learning_rate": 0.05,
@@ -301,7 +301,7 @@ async def model_info():
             }
         },
         "performance": {
-            "test_mae": MODEL_METADATA.get('test_mae', 48.55),
+            "test_mae": MODEL_METADATA.get('test_mae', 84.59),
             "test_rmse": MODEL_METADATA.get('test_rmse', 134.21),
             "test_r2": MODEL_METADATA.get('test_r2', 0.9142),
             "train_size": MODEL_METADATA.get('train_size', 1324),
@@ -329,7 +329,7 @@ async def predict_price(listing: ListingFeatures):
         prediction = MODEL.predict(X)[0]
         
         # Calculate confidence interval (predicted ± MAE)
-        mae = MODEL_METADATA.get('test_mae', 48.55)
+        mae = MODEL_METADATA.get('test_mae', 84.59)  # Default to RandomForest MAE
         ci_lower = max(0, prediction - mae)
         ci_upper = prediction + mae
         
@@ -343,7 +343,7 @@ async def predict_price(listing: ListingFeatures):
             confidence_interval_upper=round(ci_upper, 2),
             city=listing.city,
             season=listing.season_category,
-            model_version=str(MODEL_METADATA.get('version', '2.1')),
+            model_version=str(MODEL_METADATA.get('version', '1.0')),
             prediction_timestamp=datetime.now(timezone.utc).isoformat()
         )
         
@@ -375,7 +375,7 @@ async def batch_predict(request: BatchPredictionRequest):
             prediction = MODEL.predict(X)[0]
             
             # Calculate confidence interval
-            mae = MODEL_METADATA.get('test_mae', 48.55)
+            mae = MODEL_METADATA.get('test_mae', 84.59)  # Default to RandomForest MAE
             ci_lower = max(0, prediction - mae)
             ci_upper = prediction + mae
             
@@ -390,7 +390,7 @@ async def batch_predict(request: BatchPredictionRequest):
                     confidence_interval_upper=round(ci_upper, 2),
                     city=listing.city,
                     season=listing.season_category,
-                    model_version=str(MODEL_METADATA.get('version', '2.1')),
+                    model_version=str(MODEL_METADATA.get('version', '1.0')),
                     prediction_timestamp=datetime.now(timezone.utc).isoformat()
                 )
             )

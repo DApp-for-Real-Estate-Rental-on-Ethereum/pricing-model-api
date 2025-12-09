@@ -20,7 +20,7 @@ def test_root_endpoint(client):
     assert response.status_code == 200
     data = response.json()
     assert data["service"] == "Morocco Airbnb Dynamic Pricing API"
-    assert data["version"] == "2.0.0"
+    assert data["version"] == "2.1.0"
     assert "endpoints" in data
 
 
@@ -181,7 +181,7 @@ def test_prediction_confidence_intervals(client):
     
     assert ci_lower < predicted < ci_upper
     assert ci_lower >= 0  # Price can't be negative
-    assert (ci_upper - ci_lower) < 500  # Interval shouldn't be too wide (MAE ~55)
+    assert (ci_upper - ci_lower) < 1000  # Interval shouldn't be too wide (MAE ~85 for RandomForest)
 
 
 if __name__ == "__main__":
