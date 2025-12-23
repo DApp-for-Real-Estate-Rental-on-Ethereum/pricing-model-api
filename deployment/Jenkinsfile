@@ -1,6 +1,10 @@
 pipeline {
     agent any
     
+    options {
+        skipDefaultCheckout()
+    }
+    
     environment {
         DOCKER_IMAGE_NAME = 'medgm/morocco-pricing-api'
         APP_NAME = 'morocco-pricing-api'
@@ -14,7 +18,12 @@ pipeline {
         stage('Checkout') {
             steps {
                 script {
-                    // Manually handle LFS pull with credentials to avoid "Bad credentials" error
+                    // Checkout SCM but skip LFS smudge to avoid auth failure
+                    withEnv(['GIT_LFS_SKIP_SMUDGE=1']) {
+                        checkout scm
+                    }
+                    
+                    // Manually handle LFS pull with credentials
                     withCredentials([usernamePassword(credentialsId: 'github-creds', usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_PASSWORD')]) {
                         sh '''
                             git lfs install
