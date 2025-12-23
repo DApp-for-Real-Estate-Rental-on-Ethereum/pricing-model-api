@@ -18,22 +18,23 @@ pipeline {
         stage('Checkout') {
             steps {
                 script {
-                    // Checkout SCM but skip LFS smudge to avoid auth failure
-                    withEnv(['GIT_LFS_SKIP_SMUDGE=1']) {
-                        checkout scm
-                    }
-                    
-                    // Manually handle LFS pull with credentials
+                    // Manual checkout to bypass Jenkins Git Plugin LFS issues and handle auth directly
                     withCredentials([usernamePassword(credentialsId: 'github-creds', usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_PASSWORD')]) {
                         sh '''
+                            # Clean workspace
+                            rm -rf ./* .git
+                            
+                            # Clone with credentials in URL to avoid helper issues
+                            git clone https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/DApp-for-Real-Estate-Rental-on-Ethereum/pricing-model-api.git .
+                            
+                            # Setup LFS
                             git lfs install
-                            # Configure temporary credential helper for LFS
-                            git config credential.helper "!f() { echo username=\\$GIT_USERNAME; echo password=\\$GIT_PASSWORD; }; f"
                             git lfs pull
-                            git config --unset credential.helper
+                            
+                            echo "Checkout complete."
+                            git rev-parse --short HEAD
                         '''
                     }
-                    sh 'git rev-parse --short HEAD'
                 }
             }
         }
