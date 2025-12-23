@@ -5,6 +5,7 @@ pipeline {
         DOCKER_IMAGE_NAME = 'medgm/morocco-pricing-api'
         APP_NAME = 'morocco-pricing-api'
         SONARQUBE_TOKEN = credentials('sonarqube-token')
+        GIT_LFS_SKIP_SMUDGE = '1'
     }
     
     // No parameters needed while deploying locally only
@@ -13,8 +14,16 @@ pipeline {
         stage('Checkout') {
             steps {
                 script {
-                    sh 'git lfs install'
-                    sh 'git lfs pull'
+                    // Manually handle LFS pull with credentials to avoid "Bad credentials" error
+                    withCredentials([usernamePassword(credentialsId: 'github-creds', usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_PASSWORD')]) {
+                        sh '''
+                            git lfs install
+                            # Configure temporary credential helper for LFS
+                            git config credential.helper "!f() { echo username=\\$GIT_USERNAME; echo password=\\$GIT_PASSWORD; }; f"
+                            git lfs pull
+                            git config --unset credential.helper
+                        '''
+                    }
                     sh 'git rev-parse --short HEAD'
                 }
             }
