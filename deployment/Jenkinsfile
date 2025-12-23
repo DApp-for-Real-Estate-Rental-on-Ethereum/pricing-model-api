@@ -13,6 +13,8 @@ pipeline {
         stage('Checkout') {
             steps {
                 script {
+                    sh 'git lfs install'
+                    sh 'git lfs pull'
                     sh 'git rev-parse --short HEAD'
                 }
             }
@@ -34,7 +36,7 @@ pipeline {
                             exit 1
                         fi
                         # Check for RandomForest model (primary in GitHub repo)
-                        if [ ! -f models/pricing_model_randomforest.pkl ]; then
+                        if [ ! -f models/random_forest_model.pkl ]; then
                             echo "ERROR: RandomForest model file not found!"
                             echo "Available model files:"
                             ls -la models/
@@ -50,7 +52,7 @@ pipeline {
                                 exit 1
                             fi
                         else
-                            echo "✅ RandomForest model found: models/pricing_model_randomforest.pkl"
+                            echo "✅ RandomForest model found: models/random_forest_model.pkl"
                             # Check for metadata
                             if [ -f models/pricing_model_randomforest_metadata.pkl ]; then
                                 echo "  ✅ RandomForest metadata found"
@@ -229,7 +231,7 @@ from pathlib import Path
 
 # Try to find RandomForest first (primary in GitHub), then tuned, then baseline
 model_paths = [
-    'models/pricing_model_randomforest.pkl',  # PRIMARY - exists in GitHub
+    'models/random_forest_model.pkl',  # PRIMARY - exists in GitHub
     'models/tuned/xgboost_tuned.pkl',  # If available locally
     'models/pricing_model_xgboost.pkl'  # Fallback
 ]
