@@ -118,6 +118,7 @@ pipeline {
                             pip install --no-cache-dir --default-timeout=300 -r deployment/requirements.txt
                             echo 'Running pytest...'
                             cd deployment
+                            export PYTHONPATH=$PYTHONPATH:.
                             pytest test_api.py -v --tb=short --junitxml=test-results.xml
                         ")
                         
