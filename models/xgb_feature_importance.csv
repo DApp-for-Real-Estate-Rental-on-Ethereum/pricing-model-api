@@ -1,0 +1,45 @@
+feature,importance
+size_category_Large,0.17867643
+is_luxury,0.1276958
+stay_length_nights,0.10640336
+season_winter,0.06858333
+is_peak_season,0.050864507
+city_tier,0.039075308
+is_long_stay,0.03691314
+bedroom_count,0.030491881
+city_Marrakech,0.025158923
+property_type_Villa,0.023253817
+city_Oujda,0.022114383
+property_type_Other,0.020877985
+size_category_Medium,0.018377528
+city_Rabat,0.01835758
+longitude,0.016981697
+city_Casablanca,0.016856126
+property_type_House,0.014670194
+room_type_Private room,0.014015951
+city_Ouarzazate,0.013631314
+rating_value,0.011767769
+discount_rate,0.009779903
+city_Fes,0.009710382
+city_Tétouan,0.009084027
+total_capacity,0.009055582
+city_Meknes,0.008723082
+city_Chefchaouen,0.008648663
+beds_per_bedroom,0.0080665825
+latitude,0.007850355
+bed_count,0.007848345
+rating_count,0.0074651306
+image_count,0.006731222
+is_superhost,0.0067187482
+size_category_Small,0.006662074
+property_type_Bed and breakfast,0.006101269
+badge_count,0.0058224355
+city_Tangier,0.005422731
+city_Essaouira,0.0047589527
+city_Al Hoceima,0.004694862
+has_high_rating,0.0040838863
+property_type_Condominium,0.0040156594
+property_type_Loft,0.0023509322
+season_summer,0.001003487
+property_type_Boutique hotel,0.0005342874
+season_spring,0.00010036032

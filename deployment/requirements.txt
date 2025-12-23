@@ -7,10 +7,16 @@ pydantic
 scikit-learn
 joblib
 numpy
-pandas  
-
-# Optional ML packages (if using XGBoost)
+pandas
 xgboost
+
+# Database
+psycopg2-binary
+
+# Data Visualization & Analysis
+scipy
+seaborn
+plotly
 
 # Data enrichment (for fuzzy matching if needed)
 rapidfuzz

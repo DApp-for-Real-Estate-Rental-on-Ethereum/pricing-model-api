@@ -1,0 +1,14 @@
+XGBoost Best Parameters:
+==================================================
+colsample_bytree: 1.0
+gamma: 0.3
+learning_rate: 0.2
+max_depth: 11
+min_child_weight: 3
+n_estimators: 300
+subsample: 0.8
+
+Performance Metrics:
+Test MAE:  48.55 MAD
+Test RMSE: 134.21 MAD
+Test R²:   0.9142

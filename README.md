@@ -73,15 +73,16 @@ Access the interactive API docs at: **http://localhost:8000/docs**
 
 ## Model Performance
 
-### Model v2.0 - RandomForest (Current)
+### Model v2.0 - XGBoost (Current)
 
 | Metric | Value | Description |
 |--------|-------|-------------|
-| **MAE** | 55.33 MAD | Mean Absolute Error (~$5.50 USD) |
-| **RMSE** | 71.79 MAD | Root Mean Squared Error |
-| **R²** | 0.5499 | Explains 55% of price variance |
+| **MAE** | 56.01 MAD | Mean Absolute Error (~$5.60 USD) |
+| **RMSE** | 71.33 MAD | Root Mean Squared Error |
+| **R²** | 0.5556 | Explains 55.56% of price variance |
 | **Train Size** | 1,324 listings | 80% split |
 | **Test Size** | 332 listings | 20% split |
+| **Model Size** | 217 KB | Lightweight deployment |
 
 ### Model Comparison (Training Phase)
 
@@ -89,11 +90,11 @@ We evaluated 3 candidate models:
 
 | Model | Test MAE | Test RMSE | Test R² | Rank |
 |-------|----------|-----------|---------|------|
-| **RandomForest** ⭐ | **55.33** | 71.79 | 0.5499 | 🥇 |
-| XGBoost | 56.01 | 71.33 | **0.5556** | 🥈 |
+| **XGBoost** ⭐ | 56.01 | **71.33** | **0.5556** | 🥇 |
+| RandomForest | **55.33** | 71.79 | 0.5499 | 🥈 |
 | GradientBoosting | 56.32 | 72.03 | 0.5468 | 🥉 |
 
-**Champion Model**: RandomForest selected for best MAE and balanced performance.
+**Champion Model**: XGBoost selected for best R² (0.5556) and RMSE (71.33) - explains the most variance and handles outliers best. While RandomForest has slightly lower MAE (0.68 MAD difference = $0.07 USD), XGBoost wins on 2 out of 3 metrics.
 
 ---
 
@@ -304,8 +305,8 @@ Located in `notebooks/pricing_model_training.ipynb`:
 2. **Preprocessing**: StandardScaler + OneHotEncoder pipeline
 3. **Model Training**: GridSearchCV with 5-fold cross-validation
 4. **Model Comparison**: 3 algorithms evaluated
-5. **Model Selection**: RandomForest chosen as champion
-6. **Model Persistence**: Saved to `models/pricing_model_randomforest.pkl`
+5. **Model Selection**: XGBoost chosen as champion (best R² and RMSE)
+6. **Model Persistence**: Saved to `models/pricing_model_xgboost.pkl`
 
 ---
 
@@ -353,7 +354,7 @@ The project includes a complete Jenkins pipeline with the following stages:
 
 ```bash
 # Optional: Override model path
-MODEL_PATH=/app/models/pricing_model_randomforest.pkl
+MODEL_PATH=/app/models/pricing_model_xgboost.pkl
 
 # Optional: Set log level
 LOG_LEVEL=info
@@ -384,8 +385,8 @@ pricing-model-api/
 │   ├── requirements.txt               # Python dependencies
 │   └── test_api.py                    # API tests
 ├── models/
-│   ├── pricing_model_randomforest.pkl           # Trained model (4.6 MB)
-│   └── pricing_model_randomforest_metadata.pkl  # Model metadata
+│   ├── pricing_model_xgboost.pkl           # Trained model (217 KB)
+│   └── pricing_model_xgboost_metadata.pkl  # Model metadata
 ├── notebooks/
 │   ├── airbnb_pricing_pipeline.ipynb  # ETL pipeline
 │   └── pricing_model_training.ipynb   # Model training
@@ -402,9 +403,9 @@ pricing-model-api/
 - **Validation**: Pydantic v2
 
 ### Machine Learning
-- **Algorithm**: RandomForestRegressor
-- **Library**: scikit-learn 1.7.2
-- **Model Size**: 4.6 MB
+- **Algorithm**: XGBoostRegressor
+- **Library**: xgboost 3.1.2, scikit-learn 1.7.2
+- **Model Size**: 217 KB
 - **Preprocessing**: ColumnTransformer (StandardScaler + OneHotEncoder)
 
 ### Data Processing
@@ -471,8 +472,8 @@ pricing-model-api/
 ls -lh models/
 
 # Should see:
-# pricing_model_randomforest.pkl (4.6 MB)
-# pricing_model_randomforest_metadata.pkl (414 bytes)
+# pricing_model_xgboost.pkl (217 KB)
+# pricing_model_xgboost_metadata.pkl (409 bytes)
 ```
 
 ### Container Health Check Failing

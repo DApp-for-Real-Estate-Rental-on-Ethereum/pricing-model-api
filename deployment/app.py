@@ -32,6 +32,11 @@ logger = logging.getLogger(__name__)
 # Global model and metadata
 MODEL = None
 MODEL_METADATA = {}
+# When available (scikit-learn 1.0+), this holds the exact feature names
+# the trained model was fitted on. We use it to align our request features
+# with the model's expectations, even if the training pipeline used
+# expanded/one-hot encoded columns.
+MODEL_FEATURE_NAMES = None
 FEATURE_COLS = [
     'stay_length_nights', 'discount_rate', 'bedroom_count', 'bed_count',
     'rating_value', 'rating_count', 'image_count', 'badge_count',
@@ -46,24 +51,24 @@ VALID_SEASONS = ['march', 'april', 'summer', 'other']
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handle application startup and shutdown events."""
-    global MODEL, MODEL_METADATA
+    global MODEL, MODEL_METADATA, MODEL_FEATURE_NAMES
     
     # STARTUP
     try:
-        # Try multiple possible paths for the model file (prioritize RandomForest - exists in GitHub)
+        # Try multiple possible paths for the model file.
+        # IMPORTANT: In this deployment we ONLY use RandomForest-based models.
+        # XGBoost models are deliberately ignored to avoid importing the heavy
+        # xgboost dependency and to prevent unpickling errors when xgboost
+        # is not installed in the runtime environment.
         possible_model_paths = [
-            # PRIMARY: RandomForest model (exists in GitHub)
+            # PRIMARY: Tuned RandomForest model (best performance, if available)
+            Path("models/tuned/random_forest_tuned.pkl"),
+            Path("../models/tuned/random_forest_tuned.pkl"),
+            Path(__file__).parent.parent / "models" / "tuned" / "random_forest_tuned.pkl",
+            # SECONDARY: Baseline RandomForest model (exists in repository/GitHub)
             Path("models/pricing_model_randomforest.pkl"),
             Path("../models/pricing_model_randomforest.pkl"),
             Path(__file__).parent.parent / "models" / "pricing_model_randomforest.pkl",
-            # SECONDARY: Tuned XGBoost (if available locally)
-            Path("models/tuned/xgboost_tuned.pkl"),
-            Path("../models/tuned/xgboost_tuned.pkl"),
-            Path(__file__).parent.parent / "models" / "tuned" / "xgboost_tuned.pkl",
-            # FALLBACK: Baseline XGBoost
-            Path("models/pricing_model_xgboost.pkl"),
-            Path("../models/pricing_model_xgboost.pkl"),
-            Path(__file__).parent.parent / "models" / "pricing_model_xgboost.pkl"
         ]
         
         model_path = None
@@ -77,18 +82,10 @@ async def lifespan(app: FastAPI):
         
         # Try to load metadata (optional - will use defaults if not found)
         possible_metadata_paths = [
-            # PRIMARY: RandomForest metadata
+            # RandomForest metadata variants
             Path("models/pricing_model_randomforest_metadata.pkl"),
             Path("../models/pricing_model_randomforest_metadata.pkl"),
             Path(__file__).parent.parent / "models" / "pricing_model_randomforest_metadata.pkl",
-            # SECONDARY: Tuned XGBoost metadata
-            Path("models/tuned/xgboost_tuned_metadata.pkl"),
-            Path("../models/tuned/xgboost_tuned_metadata.pkl"),
-            Path(__file__).parent.parent / "models" / "tuned" / "xgboost_tuned_metadata.pkl",
-            # FALLBACK: Baseline XGBoost metadata
-            Path("models/pricing_model_xgboost_metadata.pkl"),
-            Path("../models/pricing_model_xgboost_metadata.pkl"),
-            Path(__file__).parent.parent / "models" / "pricing_model_xgboost_metadata.pkl"
         ]
         
         metadata_path = None
@@ -100,6 +97,14 @@ async def lifespan(app: FastAPI):
         # Load model
         MODEL = joblib.load(model_path)
         logger.info(f"✅ Model loaded successfully from {model_path}")
+
+        # Capture feature names from the model if available (scikit-learn 1.0+)
+        if hasattr(MODEL, "feature_names_in_"):
+            try:
+                MODEL_FEATURE_NAMES = list(MODEL.feature_names_in_)
+                logger.info(f"📊 Model expects {len(MODEL_FEATURE_NAMES)} features.")
+            except Exception as fe:
+                logger.warning(f"⚠️ Could not read feature_names_in_ from model: {fe}")
         
         # Load metadata
         if metadata_path is not None:
@@ -169,6 +174,7 @@ async def lifespan(app: FastAPI):
     logger.info("🛑 Shutting down - cleaning up resources...")
     MODEL = None
     MODEL_METADATA.clear()
+    MODEL_FEATURE_NAMES = None
     logger.info("✅ Shutdown complete")
 
 
@@ -190,6 +196,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routers for AI features
+from deployment.routers import tenant_risk, recommendations, market_trends
+
+app.include_router(tenant_risk.router)
+app.include_router(recommendations.router)
+app.include_router(market_trends.router)
 
 
 class ListingFeatures(BaseModel):
@@ -268,9 +281,17 @@ class HealthResponse(BaseModel):
 
 
 def prepare_features(listing: ListingFeatures) -> pd.DataFrame:
-    """Convert ListingFeatures to DataFrame with proper dtypes."""
-    
-    data = {
+    """
+    Convert ListingFeatures to DataFrame with proper dtypes.
+
+    If the loaded model exposes `feature_names_in_` (common for scikit-learn
+    models), we align our input to those names — filling unknown features with 0
+    and mapping known ones (including one-hot style city/season columns).
+    """
+    global MODEL_FEATURE_NAMES
+
+    # Base, high-level features from our API contract
+    base_data = {
         'stay_length_nights': listing.stay_length_nights,
         'discount_rate': listing.discount_rate,
         'bedroom_count': listing.bedroom_count,
@@ -282,16 +303,61 @@ def prepare_features(listing: ListingFeatures) -> pd.DataFrame:
         'review_density': listing.review_density,
         'quality_proxy': listing.quality_proxy,
         'city': listing.city,
-        'season_category': listing.season_category
+        'season_category': listing.season_category,
     }
-    
-    df = pd.DataFrame([data])
-    
-    # Set categorical dtypes
-    df['city'] = df['city'].astype('category')
-    df['season_category'] = df['season_category'].astype('category')
-    
-    return df[FEATURE_COLS]  # Ensure correct column order
+
+    # If we don't know the model-specific feature names, fall back to the
+    # original simple schema.
+    if not MODEL_FEATURE_NAMES:
+        df = pd.DataFrame([base_data])
+        df['city'] = df['city'].astype('category')
+        df['season_category'] = df['season_category'].astype('category')
+        return df[FEATURE_COLS]
+
+    # Build a single row matching the model's expected feature names.
+    row: Dict[str, Any] = {}
+
+    # Normalized helpers for city/season
+    city_norm = listing.city.lower()
+    season_norm = listing.season_category.lower()
+
+    for fname in MODEL_FEATURE_NAMES:
+        lname = fname.lower()
+
+        # Direct match with one of our base numeric features
+        if fname in base_data and isinstance(base_data[fname], (int, float)):
+            row[fname] = float(base_data[fname])
+            continue
+
+        # One-hot encoded city_* style columns
+        if lname.startswith("city_"):
+            # Extract suffix after "city_"
+            city_suffix = fname.split("_", 1)[1].lower() if "_" in fname else ""
+            row[fname] = 1.0 if city_suffix == city_norm else 0.0
+            continue
+
+        # One-hot encoded season_* or season_category_* style columns
+        if lname.startswith("season_") or lname.startswith("season_category_"):
+            season_suffix = fname.split("_", 1)[-1].lower()
+            row[fname] = 1.0 if season_suffix == season_norm else 0.0
+            continue
+
+        # Derived feature: beds_per_bedroom if the model expects it
+        if lname == "beds_per_bedroom":
+            try:
+                bedrooms = float(base_data.get("bedroom_count", 1.0) or 1.0)
+                beds = float(base_data.get("bed_count", 1.0) or 1.0)
+                row[fname] = beds / max(bedrooms, 1.0)
+            except Exception:
+                row[fname] = 1.0
+            continue
+
+        # Default for all other features we don't explicitly know:
+        # use 0.0 as a neutral baseline.
+        row[fname] = 0.0
+
+    df = pd.DataFrame([row])
+    return df[MODEL_FEATURE_NAMES]
 
 
 # API Endpoints

@@ -1,0 +1,45 @@
+feature_name,dtype
+latitude,float64
+longitude,float64
+stay_length_nights,int64
+discount_rate,float64
+bedroom_count,int64
+bed_count,int64
+rating_value,float64
+rating_count,int64
+badge_count,int64
+is_superhost,bool
+image_count,int64
+beds_per_bedroom,float64
+city_tier,int64
+is_peak_season,int64
+is_long_stay,int64
+has_high_rating,int64
+is_luxury,int64
+total_capacity,int64
+city_Al Hoceima,bool
+city_Casablanca,bool
+city_Chefchaouen,bool
+city_Essaouira,bool
+city_Fes,bool
+city_Marrakech,bool
+city_Meknes,bool
+city_Ouarzazate,bool
+city_Oujda,bool
+city_Rabat,bool
+city_Tangier,bool
+city_Tétouan,bool
+season_spring,bool
+season_summer,bool
+season_winter,bool
+room_type_Private room,bool
+property_type_Bed and breakfast,bool
+property_type_Boutique hotel,bool
+property_type_Condominium,bool
+property_type_House,bool
+property_type_Loft,bool
+property_type_Other,bool
+property_type_Villa,bool
+size_category_Small,bool
+size_category_Medium,bool
+size_category_Large,bool
