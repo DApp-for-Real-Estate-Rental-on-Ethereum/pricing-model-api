@@ -4,7 +4,7 @@ uvicorn[standard]
 pydantic
 
 # Machine Learning
-scikit-learn==1.7.2
+scikit-learn>=1.5.0
 joblib
 numpy
 pandas
