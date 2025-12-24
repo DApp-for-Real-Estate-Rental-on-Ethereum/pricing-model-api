@@ -102,7 +102,7 @@ pipeline {
                             echo 'Running pytest...'
                             cd deployment
                             export PYTHONPATH=$PYTHONPATH:.
-                            pytest test_api.py -v --tb=short --junitxml=test-results.xml
+                            pytest -v --tb=short --junitxml=test-results.xml
                         ")
                         
                         echo "Container ID: $CONTAINER_ID"

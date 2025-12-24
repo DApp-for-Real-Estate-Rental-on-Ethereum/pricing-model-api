@@ -21,15 +21,16 @@ COPY deployment/app.py .
 
 # Copy models directory (including all models)
 COPY models/ models/
-# Verify at least one model exists (RandomForest is primary)
-RUN if [ ! -f models/pricing_model_randomforest.pkl ] && [ ! -f models/tuned/xgboost_tuned.pkl ] && [ ! -f models/pricing_model_xgboost.pkl ]; then \
-        echo "ERROR: No model file found!" && \
-        echo "Available files:" && \
-        ls -la models/ && \
-        exit 1; \
+# Verify production model exists
+RUN if [ ! -f models/production/random_forest_tuned.pkl ]; then \
+    echo "ERROR: Production model (random_forest_tuned.pkl) not found!" && \
+    echo "Available files:" && \
+    ls -la models/ && \
+    if [ -d models/production ]; then ls -la models/production/; fi && \
+    exit 1; \
     else \
-        echo "✅ Model file(s) found:" && \
-        ls -lh models/*.pkl models/tuned/*.pkl 2>/dev/null | head -5; \
+    echo "✅ Production model found:" && \
+    ls -lh models/production/*.pkl; \
     fi
 
 # Create non-root user for security
