@@ -463,28 +463,26 @@ def load_cluster_model():
     """Load K-Means cluster model if available."""
     global PROPERTY_CLUSTER_MODEL, CLUSTER_METADATA
     
-    possible_paths = [
-        Path("models/property_cluster_model.pkl"),
-        Path("../models/property_cluster_model.pkl"),
-        Path(__file__).parent.parent.parent / "models" / "property_cluster_model.pkl",
-    ]
+    # Path to consolidated production models
+    base_path = Path(__file__).parent.parent.parent / "models" / "production"
+    model_path = base_path / "property_cluster_model.pkl"
     
-    for path in possible_paths:
-        if path.exists():
-            try:
-                PROPERTY_CLUSTER_MODEL = joblib.load(path)
-                logger.info(f"✅ Property cluster model loaded from {path}")
-                
-                metadata_path = path.parent / f"{path.stem}_metadata.pkl"
-                if metadata_path.exists():
-                    CLUSTER_METADATA = joblib.load(metadata_path)
-                else:
-                    CLUSTER_METADATA = {'n_clusters': 5, 'version': '1.0'}
-                
-                return True
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to load cluster model from {path}: {e}")
-    
+    if model_path.exists():
+        try:
+            PROPERTY_CLUSTER_MODEL = joblib.load(model_path)
+            logger.info(f"✅ Property cluster model loaded from {model_path}")
+            
+            metadata_path = base_path / "property_cluster_model_metadata.pkl"
+            if metadata_path.exists():
+                CLUSTER_METADATA = joblib.load(metadata_path)
+            else:
+                CLUSTER_METADATA = {'n_clusters': 5, 'version': '1.0'}
+            
+            return True
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load cluster model from {model_path}: {e}")
+            return False
+            
     logger.info("ℹ️ Property cluster model not found. Using cosine similarity only.")
     return False
 

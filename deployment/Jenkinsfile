@@ -55,36 +55,19 @@ pipeline {
                             exit 1
                         fi
                         # Check for RandomForest model (primary in GitHub repo)
-                        if [ ! -f models/random_forest_model.pkl ]; then
-                            echo "ERROR: RandomForest model file not found!"
+                        # Check for Production Model
+                        if [ ! -f models/production/random_forest_tuned.pkl ]; then
+                            echo "ERROR: Production model (random_forest_tuned.pkl) not found in models/production/!"
                             echo "Available model files:"
-                            ls -la models/
-                            if [ -d models/tuned ]; then
-                                echo "Tuned models directory contents:"
-                                ls -la models/tuned/ 2>/dev/null || echo "Tuned directory empty or doesn't exist"
-                            fi
-                            # Check if any model exists as fallback
-                            if [ -f models/pricing_model_xgboost.pkl ] || [ -f models/tuned/xgboost_tuned.pkl ]; then
-                                echo "WARNING: RandomForest not found, but other model(s) exist - will use fallback"
+                            if [ -d models/production ]; then
+                                ls -la models/production/
                             else
-                                echo "ERROR: No model files found at all!"
-                                exit 1
+                                echo "models/production directory missing!"
+                                ls -la models/
                             fi
+                            exit 1
                         else
-                            echo "✅ RandomForest model found: models/random_forest_model.pkl"
-                            # Check for metadata
-                            if [ -f models/pricing_model_randomforest_metadata.pkl ]; then
-                                echo "  ✅ RandomForest metadata found"
-                            else
-                                echo "  ⚠️  RandomForest metadata not found (will use defaults)"
-                            fi
-                            # Also check for other models (optional)
-                            if [ -f models/tuned/xgboost_tuned.pkl ]; then
-                                echo "  ℹ️  Tuned XGBoost also available (will be used if RandomForest not found)"
-                            fi
-                            if [ -f models/pricing_model_xgboost.pkl ]; then
-                                echo "  ℹ️  Baseline XGBoost also available (fallback)"
-                            fi
+                            echo "✅ Production model found: models/production/random_forest_tuned.pkl"
                         fi
                         echo "Project layout verified."
                         echo "Cleaning up any leftover files from previous builds..."
@@ -249,36 +232,37 @@ import joblib
 import os
 from pathlib import Path
 
-# Try to find RandomForest first (primary in GitHub), then tuned, then baseline
-model_paths = [
-    'models/random_forest_model.pkl',  # PRIMARY - exists in GitHub
-    'models/tuned/xgboost_tuned.pkl',  # If available locally
-    'models/pricing_model_xgboost.pkl'  # Fallback
-]
+# Production model path
+model_path = 'models/production/random_forest_tuned.pkl'
 
-model_path = None
-for path in model_paths:
-    if os.path.exists(path):
-        model_path = path
-        print(f'Found model: {path}')
-        break
-
-if model_path is None:
-    print('ERROR: No model file found!')
-    print('Checked paths:', model_paths)
+if os.path.exists(model_path):
+    print(f'Found production model: {model_path}')
+else:
+    print(f'ERROR: Production model not found at {model_path}')
+    # Check what IS there for debugging
+    if os.path.exists('models/production'):
+        print('Contents of models/production:', os.listdir('models/production'))
+    else:
+        print('models/production directory does not exist!')
+    if os.path.exists('models'):
+        print('Contents of models root:', os.listdir('models'))
     exit(1)
 
 print(f'Loading model from: {model_path}')
-model = joblib.load(model_path)
-print('Model loaded successfully:', type(model).__name__)
-print('Model size: {:.2f} MB'.format(os.path.getsize(model_path) / (1024 * 1024)))
+try:
+    model = joblib.load(model_path)
+    print('Model loaded successfully:', type(model).__name__)
+    print('Model size: {:.2f} MB'.format(os.path.getsize(model_path) / (1024 * 1024)))
 
-# Validate model has predict method
-if not hasattr(model, 'predict'):
-    print('ERROR: Model does not have predict method!')
+    # Validate model has predict method
+    if not hasattr(model, 'predict'):
+        print('ERROR: Model does not have predict method!')
+        exit(1)
+
+    print('✅ Model validation passed!')
+except Exception as e:
+    print(f'ERROR loading model: {e}')
     exit(1)
-
-print('✅ Model validation passed!')
 PYEOF
                         ")
                         

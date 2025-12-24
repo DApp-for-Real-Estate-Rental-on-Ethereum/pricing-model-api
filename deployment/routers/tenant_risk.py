@@ -399,31 +399,29 @@ def load_risk_model():
     """Load the trained risk model from disk."""
     global RISK_MODEL, RISK_MODEL_METADATA
     
-    possible_paths = [
-        Path("models/tenant_risk_model.pkl"),
-        Path("../models/tenant_risk_model.pkl"),
-        Path(__file__).parent.parent.parent / "models" / "tenant_risk_model.pkl",
-    ]
+    # Path to consolidated production models
+    base_path = Path(__file__).parent.parent.parent / "models" / "production"
+    model_path = base_path / "tenant_risk_model.pkl"
     
-    for path in possible_paths:
-        if path.exists():
-            try:
-                RISK_MODEL = joblib.load(path)
-                logger.info(f"✅ Tenant risk model loaded from {path}")
-                
-                # Try to load metadata
-                metadata_path = path.parent / f"{path.stem}_metadata.pkl"
-                if metadata_path.exists():
-                    RISK_MODEL_METADATA = joblib.load(metadata_path)
-                else:
-                    RISK_MODEL_METADATA = {'version': '1.0', 'model_type': 'RandomForestClassifier'}
-                
-                return True
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to load risk model from {path}: {e}")
-    
-    logger.warning("⚠️ Tenant risk model not found. Using heuristic scoring.")
-    return False
+    if model_path.exists():
+        try:
+            RISK_MODEL = joblib.load(model_path)
+            logger.info(f"✅ Tenant risk model loaded from {model_path}")
+            
+            # Try to load metadata
+            metadata_path = base_path / "tenant_risk_model_metadata.pkl"
+            if metadata_path.exists():
+                RISK_MODEL_METADATA = joblib.load(metadata_path)
+            else:
+                RISK_MODEL_METADATA = {'version': '1.0', 'model_type': 'RandomForestClassifier'}
+            
+            return True
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load risk model from {model_path}: {e}")
+            return False
+    else:
+        logger.warning(f"⚠️ Tenant risk model not found at {model_path}. Using heuristic scoring.")
+        return False
 
 
 # Initialize model on module load

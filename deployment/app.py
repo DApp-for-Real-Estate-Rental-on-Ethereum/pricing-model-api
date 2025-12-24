@@ -55,44 +55,12 @@ async def lifespan(app: FastAPI):
     
     # STARTUP
     try:
-        # Try multiple possible paths for the model file.
-        # IMPORTANT: In this deployment we ONLY use RandomForest-based models.
-        # XGBoost models are deliberately ignored to avoid importing the heavy
-        # xgboost dependency and to prevent unpickling errors when xgboost
-        # is not installed in the runtime environment.
-        possible_model_paths = [
-            # PRIMARY: Tuned RandomForest model (best performance, if available)
-            Path("models/tuned/random_forest_tuned.pkl"),
-            Path("../models/tuned/random_forest_tuned.pkl"),
-            Path(__file__).parent.parent / "models" / "tuned" / "random_forest_tuned.pkl",
-            # SECONDARY: Baseline RandomForest model (exists in repository/GitHub)
-            Path("models/pricing_model_randomforest.pkl"),
-            Path("../models/pricing_model_randomforest.pkl"),
-            Path(__file__).parent.parent / "models" / "pricing_model_randomforest.pkl",
-        ]
+        # Load the production model from the consolidated directory
+        base_path = Path(__file__).parent.parent / "models" / "production"
+        model_path = base_path / "random_forest_tuned.pkl"
         
-        model_path = None
-        for path in possible_model_paths:
-            if path.exists():
-                model_path = path
-                break
-        
-        if model_path is None:
-            raise FileNotFoundError(f"Model file not found in any of: {possible_model_paths}")
-        
-        # Try to load metadata (optional - will use defaults if not found)
-        possible_metadata_paths = [
-            # RandomForest metadata variants
-            Path("models/pricing_model_randomforest_metadata.pkl"),
-            Path("../models/pricing_model_randomforest_metadata.pkl"),
-            Path(__file__).parent.parent / "models" / "pricing_model_randomforest_metadata.pkl",
-        ]
-        
-        metadata_path = None
-        for path in possible_metadata_paths:
-            if path.exists():
-                metadata_path = path
-                break
+        if not model_path.exists():
+            raise FileNotFoundError(f"Production model not found at {model_path}")
         
         # Load model
         MODEL = joblib.load(model_path)
@@ -106,61 +74,15 @@ async def lifespan(app: FastAPI):
             except Exception as fe:
                 logger.warning(f"⚠️ Could not read feature_names_in_ from model: {fe}")
         
-        # Load metadata
-        if metadata_path is not None:
-            MODEL_METADATA = joblib.load(metadata_path)
-            logger.info(f"✅ Model metadata loaded: MAE={MODEL_METADATA.get('test_mae', 'N/A'):.2f} MAD")
-        else:
-            logger.warning("⚠️ Metadata file not found. Using default metadata based on model type.")
-            # Detect which model was loaded and use appropriate defaults
-            model_name_lower = str(model_path).lower()
-            if 'randomforest' in model_name_lower or 'random_forest' in model_name_lower:
-                # Check if it's tuned or baseline
-                if 'tuned' in model_name_lower:
-                    # Tuned RandomForest (better than baseline)
-                    MODEL_METADATA = {
-                        'model_name': 'RandomForest Tuned',
-                        'version': '1.1',
-                        'test_mae': 54.57,  # From tuning_comparison.csv
-                        'test_rmse': 186.92,
-                        'test_r2': 0.8335
-                    }
-                else:
-                    # Default metadata for RandomForest model (baseline - GitHub)
-                    MODEL_METADATA = {
-                        'model_name': 'RandomForest',
-                        'version': '1.0',
-                        'test_mae': 84.59,  # From model comparison
-                        'test_rmse': 172.22,
-                        'test_r2': 0.8586
-                    }
-            elif 'tuned' in model_name_lower and 'xgboost' in model_name_lower:
-                # XGBoost Tuned model (best performance)
-                MODEL_METADATA = {
-                    'model_name': 'XGBoost Tuned',
-                    'version': '2.1',
-                    'test_mae': 48.55,
-                    'test_rmse': 134.21,
-                    'test_r2': 0.9142
-                }
-            elif 'xgboost' in model_name_lower:
-                # Default metadata for XGBoost baseline
-                MODEL_METADATA = {
-                    'model_name': 'XGBoost',
-                    'version': '2.0',
-                    'test_mae': 56.01,
-                    'test_rmse': 71.33,
-                    'test_r2': 0.5556
-                }
-            else:
-                # Unknown model - use RandomForest defaults as safe fallback
-                MODEL_METADATA = {
-                    'model_name': 'Unknown Model',
-                    'version': '1.0',
-                    'test_mae': 84.59,
-                    'test_rmse': 172.22,
-                    'test_r2': 0.8586
-                }
+        # Metadata logic (simplified)
+        MODEL_METADATA = {
+            'model_name': 'RandomForest Tuned',
+            'version': '1.1',
+            'test_mae': 54.57,
+            'test_rmse': 186.92,
+            'test_r2': 0.8335
+        }
+        logger.info(f"✅ Model metadata loaded: MAE={MODEL_METADATA.get('test_mae', 'N/A'):.2f} MAD")
         
         logger.info("🚀 Application startup complete - ready to serve predictions!")
         
