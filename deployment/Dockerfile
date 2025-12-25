@@ -16,11 +16,11 @@ COPY deployment/requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY deployment/app.py .
-
-# Copy models directory (including all models)
+# Copy entire deployment package (including routers)
+COPY deployment/ deployment/
+# Copy models directory
 COPY models/ models/
+
 # Verify production model exists
 RUN if [ ! -f models/production/random_forest_tuned.pkl ]; then \
     echo "ERROR: Production model (random_forest_tuned.pkl) not found!" && \
@@ -40,9 +40,9 @@ USER apiuser
 # Expose port
 EXPOSE 8000
 
-# Health check
+# Health check (adjust URL to match new path structure if needed, but port is same)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)" || exit 1
 
-# Run the application
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the application (pointing to module path)
+CMD ["uvicorn", "deployment.app:app", "--host", "0.0.0.0", "--port", "8000"]
