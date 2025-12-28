@@ -149,6 +149,7 @@ pipeline {
                             # Network 'ci-stack_cicd_net' is required to reach the 'sonarqube' container
                             docker run --rm \
                                 --network ci-stack_cicd_net \
+                                --user 0 \
                                 -v "$WORKSPACE:/usr/src" \
                                 -e SONAR_HOST_URL=http://sonarqube:9000 \
                                 -e SONAR_TOKEN=${SONARQUBE_TOKEN} \
