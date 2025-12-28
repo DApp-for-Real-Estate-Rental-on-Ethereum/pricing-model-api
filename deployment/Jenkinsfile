@@ -154,8 +154,10 @@ pipeline {
                                 -e SONAR_TOKEN=${SONARQUBE_TOKEN} \
                                 sonarsource/sonar-scanner-cli \
                                 -Dsonar.projectKey=morocco-pricing-api \
-                                -Dsonar.sources=deployment/app.py \
-                                -Dsonar.tests=deployment/test_api.py \
+                                -Dsonar.sources=deployment \
+                                -Dsonar.inclusions=deployment/app.py \
+                                -Dsonar.tests=deployment \
+                                -Dsonar.test.inclusions=deployment/test_api.py \
                                 -Dsonar.python.version=3.12
                           else
                             echo "No app.py found; skipping SonarQube analysis."
