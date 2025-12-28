@@ -151,7 +151,7 @@ pipeline {
                             unzip -q sonar-scanner-cli.zip
                             ./sonar-scanner-4.8.0.2856-linux/bin/sonar-scanner \\
                               -Dsonar.projectKey=morocco-pricing-api \\
-                              -Dsonar.host.url=http://localhost:9000 \\
+                              -Dsonar.host.url=http://sonarqube:9000 \\
                               -Dsonar.login=${SONARQUBE_TOKEN} \\
                               -Dsonar.sources=deployment/app.py \\
                               -Dsonar.tests=deployment/test_api.py \\
