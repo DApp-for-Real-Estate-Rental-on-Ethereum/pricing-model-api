@@ -146,7 +146,7 @@ pipeline {
                         if [ -f "deployment/app.py" ]; then
                           echo "Running SonarQube analysis for pricing API..."
                           CONTAINER_ID=$(docker create --network host -w /workspace python:3.12-slim sh -c "
-                            apt-get update && apt-get install -y curl unzip
+                            apt-get update && apt-get install -y curl unzip git openjdk-17-jre
                             curl -o sonar-scanner-cli.zip -L https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
                             unzip -q sonar-scanner-cli.zip
                             ./sonar-scanner-4.8.0.2856-linux/bin/sonar-scanner \\
