@@ -143,24 +143,23 @@ pipeline {
             steps {
                 script {
                     sh '''
-                        if [ -f "deployment/app.py" ]; then
-                          echo "Running SonarQube analysis for pricing API..."
-                          # Use verified sonarsource/sonar-scanner-cli image to avoid installing JRE/curl/unzip
-                          CONTAINER_ID=$(docker create --network host -w /usr/src sonarsource/sonar-scanner-cli \
-                              -Dsonar.projectKey=morocco-pricing-api \
-                              -Dsonar.host.url=http://sonarqube:9000 \
-                              -Dsonar.login=${SONARQUBE_TOKEN} \
-                              -Dsonar.sources=deployment/app.py \
-                              -Dsonar.tests=deployment/test_api.py \
-                              -Dsonar.python.version=3.12)
-                          
-                          # Copy workspace to the expected source directory in the container
-                          docker cp "$WORKSPACE/." $CONTAINER_ID:/usr/src/
-                          docker start -a $CONTAINER_ID || true
-                          docker rm $CONTAINER_ID
-                        else
-                          echo "No app.py found; skipping SonarQube analysis."
-                        fi
+                          if [ -f "deployment/app.py" ]; then
+                            echo "Running SonarQube analysis for pricing API..."
+                            # Simple execution using docker run with volume mapping
+                            # Network 'ci-stack_cicd_net' is required to reach the 'sonarqube' container
+                            docker run --rm \
+                                --network ci-stack_cicd_net \
+                                -v "$WORKSPACE:/usr/src" \
+                                -e SONAR_HOST_URL=http://sonarqube:9000 \
+                                -e SONAR_LOGIN=${SONARQUBE_TOKEN} \
+                                sonarsource/sonar-scanner-cli \
+                                -Dsonar.projectKey=morocco-pricing-api \
+                                -Dsonar.sources=deployment/app.py \
+                                -Dsonar.tests=deployment/test_api.py \
+                                -Dsonar.python.version=3.12
+                          else
+                            echo "No app.py found; skipping SonarQube analysis."
+                          fi
                     '''
                 }
             }
