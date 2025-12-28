@@ -151,7 +151,7 @@ pipeline {
                                 --network ci-stack_cicd_net \
                                 -v "$WORKSPACE:/usr/src" \
                                 -e SONAR_HOST_URL=http://sonarqube:9000 \
-                                -e SONAR_LOGIN=${SONARQUBE_TOKEN} \
+                                -e SONAR_TOKEN=${SONARQUBE_TOKEN} \
                                 sonarsource/sonar-scanner-cli \
                                 -Dsonar.projectKey=morocco-pricing-api \
                                 -Dsonar.sources=deployment/app.py \
