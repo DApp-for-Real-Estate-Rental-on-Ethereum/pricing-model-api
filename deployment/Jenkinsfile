@@ -145,12 +145,11 @@ pipeline {
                     sh '''
                           if [ -f "deployment/app.py" ]; then
                             echo "Running SonarQube analysis for pricing API..."
-                            # Simple execution using docker run with volume mapping
+                            # Use docker create/cp/start pattern to avoid DinD volume mount issues
                             # Network 'ci-stack_cicd_net' is required to reach the 'sonarqube' container
-                            docker run --rm \
+                            CONTAINER_ID=$(docker create \
                                 --network ci-stack_cicd_net \
-                                --user 0 \
-                                -v "$WORKSPACE:/usr/src" \
+                                -w /usr/src \
                                 -e SONAR_HOST_URL=http://sonarqube:9000 \
                                 -e SONAR_TOKEN=${SONARQUBE_TOKEN} \
                                 sonarsource/sonar-scanner-cli \
@@ -159,7 +158,12 @@ pipeline {
                                 -Dsonar.inclusions=deployment/app.py \
                                 -Dsonar.tests=deployment \
                                 -Dsonar.test.inclusions=deployment/test_api.py \
-                                -Dsonar.python.version=3.12
+                                -Dsonar.python.version=3.12)
+                            
+                            # Copy workspace into the container (reliable in DinD)
+                            docker cp "$WORKSPACE/." $CONTAINER_ID:/usr/src/
+                            docker start -a $CONTAINER_ID
+                            docker rm $CONTAINER_ID
                           else
                             echo "No app.py found; skipping SonarQube analysis."
                           fi
