@@ -165,17 +165,6 @@ pipeline {
                             docker cp "$WORKSPACE/." $CONTAINER_ID:/usr/src/
                             docker start -a $CONTAINER_ID
                             docker rm $CONTAINER_ID
-                            
-                            echo "Waiting for SonarQube Background Task..."
-                            sleep 5
-                            
-                            # Verify Project Existence via API
-                            echo "Checking if project exists in SonarQube..."
-                            CONTAINER_ID_CURL=$(docker create --network ci-stack_cicd_net curlimages/curl \
-                              -u ${SONARQUBE_TOKEN}: \
-                              http://sonarqube:9000/api/components/show?component=morocco-pricing-api)
-                            docker start -a $CONTAINER_ID_CURL || echo "Failed to query SonarQube API"
-                            docker rm $CONTAINER_ID_CURL
                           else
                             echo "No app.py found; skipping SonarQube analysis."
                           fi
