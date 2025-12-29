@@ -27,9 +27,8 @@ pipeline {
                             # Clone with credentials in URL
                             git clone https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/DApp-for-Real-Estate-Rental-on-Ethereum/pricing-model-api.git .
                             
-                            # Setup LFS
-                            git lfs install
-                            git lfs pull
+                            # LFS Removed
+
                             
                             echo "Checkout complete."
                             git rev-parse --short HEAD
@@ -56,8 +55,8 @@ pipeline {
                         fi
                         # Check for RandomForest model (primary in GitHub repo)
                         # Check for Production Model
-                        if [ ! -f models/production/random_forest_tuned.pkl ]; then
-                            echo "ERROR: Production model (random_forest_tuned.pkl) not found in models/production/!"
+                        if [ ! -f models/production/random_forest_tuned.pkl.gz ]; then
+                            echo "ERROR: Production model (random_forest_tuned.pkl.gz) not found in models/production/!"
                             echo "Available model files:"
                             if [ -d models/production ]; then
                                 ls -la models/production/
@@ -67,7 +66,7 @@ pipeline {
                             fi
                             exit 1
                         else
-                            echo "✅ Production model found: models/production/random_forest_tuned.pkl"
+                            echo "✅ Production model found: models/production/random_forest_tuned.pkl.gz"
                         fi
                         echo "Project layout verified."
                         echo "Cleaning up any leftover files from previous builds..."
@@ -238,7 +237,7 @@ import os
 from pathlib import Path
 
 # Production model path
-model_path = 'models/production/random_forest_tuned.pkl'
+model_path = 'models/production/random_forest_tuned.pkl.gz'
 
 if os.path.exists(model_path):
     print(f'Found production model: {model_path}')

@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI):
     try:
         # Load the production model from the consolidated directory
         base_path = Path(__file__).parent.parent / "models" / "production"
-        model_path = base_path / "random_forest_tuned.pkl"
+        model_path = base_path / "random_forest_tuned.pkl.gz"
         
         if not model_path.exists():
             raise FileNotFoundError(f"Production model not found at {model_path}")
