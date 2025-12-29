@@ -246,7 +246,17 @@ def predict_risk_score(features: TenantRiskFeatures) -> dict:
             risk_probability = 0.5
         
         # Convert to trust score (0-100)
-        trust_score = round((1 - risk_probability) * 100)
+        model_trust_score = round((1 - risk_probability) * 100)
+        
+        # Get Heuristic Score for calibration
+        heuristic = heuristic_risk_score(features)
+        heuristic_score = heuristic['trust_score']
+        
+        # Weighted Blend (40% Model, 60% Heuristic) to stabilize
+        trust_score = int((model_trust_score * 0.4) + (heuristic_score * 0.6))
+        
+        # Recalculate Risk Probability
+        risk_probability = 1.0 - (trust_score / 100.0)
         
         # Determine risk band
         if trust_score >= 80:
@@ -265,7 +275,8 @@ def predict_risk_score(features: TenantRiskFeatures) -> dict:
             'trust_score': trust_score,
             'risk_band': risk_band,
             'risk_probability': float(risk_probability),
-            'top_factors': top_factors
+            'top_factors': top_factors,
+            'calibration': 'blended'
         }
     except Exception as e:
         logger.error(f"Error predicting risk score: {e}")
