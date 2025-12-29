@@ -21,16 +21,16 @@ COPY deployment/ deployment/
 # Copy models directory
 COPY models/ models/
 
-# Verify production model exists
-RUN if [ ! -f models/production/random_forest_tuned.pkl ]; then \
-    echo "ERROR: Production model (random_forest_tuned.pkl) not found!" && \
+# Verify production model exists (compressed .pkl.gz format)
+RUN if [ ! -f models/production/random_forest_tuned.pkl.gz ]; then \
+    echo "ERROR: Production model (random_forest_tuned.pkl.gz) not found!" && \
     echo "Available files:" && \
     ls -la models/ && \
     if [ -d models/production ]; then ls -la models/production/; fi && \
     exit 1; \
     else \
     echo "✅ Production model found:" && \
-    ls -lh models/production/*.pkl; \
+    ls -lh models/production/random_forest_tuned.pkl.gz; \
     fi
 
 # Create non-root user for security
