@@ -7,7 +7,7 @@ Supports individual predictions and batch processing.
 
 Author: AI-Powered Rental Platform
 Version: 2.1.0
-Model: pricing_model_randomforest.pkl (Primary) or xgboost_tuned.pkl (if available)
+Model: Pricing Model (RandomForest/XGBoost) managed by ModelManager
 """
 
 from contextlib import asynccontextmanager
@@ -15,12 +15,13 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from typing import List, Optional, Dict, Any
-import joblib
 import pandas as pd
 import numpy as np
-from pathlib import Path
 import logging
 from datetime import datetime, timezone
+
+from deployment.config import settings
+from deployment.model_manager import model_manager
 
 # Configure logging
 logging.basicConfig(
@@ -29,14 +30,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global model and metadata
-MODEL = None
-MODEL_METADATA = {}
-# When available (scikit-learn 1.0+), this holds the exact feature names
-# the trained model was fitted on. We use it to align our request features
-# with the model's expectations, even if the training pipeline used
-# expanded/one-hot encoded columns.
-MODEL_FEATURE_NAMES = None
 FEATURE_COLS = [
     'stay_length_nights', 'discount_rate', 'bedroom_count', 'bed_count',
     'rating_value', 'rating_count', 'image_count', 'badge_count',
@@ -51,80 +44,38 @@ VALID_SEASONS = ['march', 'april', 'summer', 'other']
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handle application startup and shutdown events."""
-    global MODEL, MODEL_METADATA, MODEL_FEATURE_NAMES
+    logger.info(f"🚀 Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     
-    # STARTUP
+    # Pre-warm models on startup (optional, but good for health checks)
     try:
-        # Load the production model from the consolidated directory
-        base_path = Path(__file__).parent.parent / "models" / "production"
-        model_path = base_path / "random_forest_tuned.pkl.gz"
-        
-        if not model_path.exists():
-            raise FileNotFoundError(f"Production model not found at {model_path}")
-        
-        # Load model
-        MODEL = joblib.load(model_path)
-        logger.info(f"✅ Model loaded successfully from {model_path}")
-
-        # Capture feature names from the model if available (scikit-learn 1.0+)
-        if hasattr(MODEL, "feature_names_in_"):
-            try:
-                MODEL_FEATURE_NAMES = list(MODEL.feature_names_in_)
-                logger.info(f"📊 Model expects {len(MODEL_FEATURE_NAMES)} features.")
-            except Exception as fe:
-                logger.warning(f"⚠️ Could not read feature_names_in_ from model: {fe}")
-        
-        # Metadata logic (simplified)
-        MODEL_METADATA = {
-            'model_name': 'RandomForest Tuned',
-            'version': '1.1',
-            'test_mae': 54.57,
-            'test_rmse': 186.92,
-            'test_r2': 0.8335
-        }
-        logger.info(f"✅ Model metadata loaded: MAE={MODEL_METADATA.get('test_mae', 'N/A'):.2f} MAD")
-        
-        logger.info("🚀 Application startup complete - ready to serve predictions!")
-        
+        model_manager.get_pricing_model()
+        logger.info("✅ Pricing model pre-loaded")
     except Exception as e:
-        logger.error(f"❌ Failed to load model: {str(e)}")
-        raise
+        logger.warning(f"⚠️ Could not pre-load pricing model: {e}")
+        
+    yield
     
-    yield  # Application runs here
-    
-    # SHUTDOWN
-    logger.info("🛑 Shutting down - cleaning up resources...")
-    MODEL = None
-    MODEL_METADATA.clear()
-    MODEL_FEATURE_NAMES = None
-    logger.info("✅ Shutdown complete")
+    logger.info("🛑 Shutting down...")
 
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="Morocco Airbnb Dynamic Pricing API",
-    description="AI-powered nightly price predictions for Airbnb listings across Moroccan cities using RandomForest/XGBoost models",
-    version="2.1.0",
+    title=settings.APP_NAME,
+    description="AI-powered nightly price predictions for Airbnb listings across Moroccan cities",
+    version=settings.APP_VERSION,
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan
 )
 
-# CORS middleware for cross-origin requests
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS is handled at the API Gateway; avoid duplicate headers here
 
 # Include routers for AI features
 from deployment.routers import tenant_risk, recommendations, market_trends
 
-app.include_router(tenant_risk.router)
-app.include_router(recommendations.router)
-app.include_router(market_trends.router)
+app.include_router(tenant_risk.router, prefix="/api")
+app.include_router(recommendations.router, prefix="/api")
+app.include_router(market_trends.router, prefix="/api")
 
 
 class ListingFeatures(BaseModel):
@@ -195,24 +146,17 @@ class HealthResponse(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
     
     status: str
-    model_loaded: bool
-    model_version: str
-    model_mae: float
-    model_r2: float
+    models_status: Dict[str, str]
     timestamp: str
 
 
 def prepare_features(listing: ListingFeatures) -> pd.DataFrame:
     """
-    Convert ListingFeatures to DataFrame with proper dtypes.
-
-    If the loaded model exposes `feature_names_in_` (common for scikit-learn
-    models), we align our input to those names — filling unknown features with 0
-    and mapping known ones (including one-hot style city/season columns).
+    Convert ListingFeatures to DataFrame using ModelManager's known feature names.
     """
-    global MODEL_FEATURE_NAMES
+    model_feature_names = model_manager.get_feature_names("pricing")
 
-    # Base, high-level features from our API contract
+    # Base features
     base_data = {
         'stay_length_nights': listing.stay_length_nights,
         'discount_rate': listing.discount_rate,
@@ -228,43 +172,35 @@ def prepare_features(listing: ListingFeatures) -> pd.DataFrame:
         'season_category': listing.season_category,
     }
 
-    # If we don't know the model-specific feature names, fall back to the
-    # original simple schema.
-    if not MODEL_FEATURE_NAMES:
+    if not model_feature_names:
+        # Fallback if feature names not found in model metadata
         df = pd.DataFrame([base_data])
         df['city'] = df['city'].astype('category')
         df['season_category'] = df['season_category'].astype('category')
         return df[FEATURE_COLS]
 
-    # Build a single row matching the model's expected feature names.
+    # Align with model expectations
     row: Dict[str, Any] = {}
-
-    # Normalized helpers for city/season
     city_norm = listing.city.lower()
     season_norm = listing.season_category.lower()
 
-    for fname in MODEL_FEATURE_NAMES:
+    for fname in model_feature_names:
         lname = fname.lower()
 
-        # Direct match with one of our base numeric features
         if fname in base_data and isinstance(base_data[fname], (int, float)):
             row[fname] = float(base_data[fname])
             continue
 
-        # One-hot encoded city_* style columns
         if lname.startswith("city_"):
-            # Extract suffix after "city_"
             city_suffix = fname.split("_", 1)[1].lower() if "_" in fname else ""
             row[fname] = 1.0 if city_suffix == city_norm else 0.0
             continue
 
-        # One-hot encoded season_* or season_category_* style columns
         if lname.startswith("season_") or lname.startswith("season_category_"):
             season_suffix = fname.split("_", 1)[-1].lower()
             row[fname] = 1.0 if season_suffix == season_norm else 0.0
             continue
 
-        # Derived feature: beds_per_bedroom if the model expects it
         if lname == "beds_per_bedroom":
             try:
                 bedrooms = float(base_data.get("bedroom_count", 1.0) or 1.0)
@@ -274,44 +210,21 @@ def prepare_features(listing: ListingFeatures) -> pd.DataFrame:
                 row[fname] = 1.0
             continue
 
-        # Default for all other features we don't explicitly know:
-        # use 0.0 as a neutral baseline.
         row[fname] = 0.0
 
     df = pd.DataFrame([row])
-    return df[MODEL_FEATURE_NAMES]
-
-
-# API Endpoints
-@app.get("/", tags=["Root"])
-async def root():
-    """Root endpoint with API information."""
-    model_info = f"{MODEL_METADATA.get('model_name', 'Unknown')} (MAE: {MODEL_METADATA.get('test_mae', 'N/A')} MAD)"
-    return {
-        "service": "Morocco Airbnb Dynamic Pricing API",
-        "version": "2.1.0",
-        "model": model_info,
-        "status": "operational",
-        "documentation": "/docs",
-        "endpoints": {
-            "health": "/health",
-            "predict": "/predict",
-            "batch_predict": "/batch-predict",
-            "model_info": "/model-info"
-        }
-    }
+    return df[model_feature_names]
 
 
 @app.get("/health", response_model=HealthResponse, tags=["Monitoring"])
 async def health_check():
-    """Health check endpoint for monitoring and load balancers."""
+    """Health check endpoint for monitoring."""
+    status_map = model_manager.health_check()
+    overall = "healthy" if status_map.get("pricing") == "loaded" else "degraded"
     
     return HealthResponse(
-        status="healthy" if MODEL is not None else "unhealthy",
-        model_loaded=MODEL is not None,
-        model_version=str(MODEL_METADATA.get('version', '1.0')),
-        model_mae=MODEL_METADATA.get('test_mae', 84.59),  # Default to RandomForest
-        model_r2=MODEL_METADATA.get('test_r2', 0.8586),  # Default to RandomForest
+        status=overall,
+        models_status=status_map,
         timestamp=datetime.now(timezone.utc).isoformat()
     )
 
@@ -320,59 +233,38 @@ async def health_check():
 async def model_info():
     """Get detailed model information and metadata."""
     
-    if MODEL is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
+    model = model_manager.get_pricing_model()
+    if model is None:
+        raise HTTPException(status_code=503, detail="Pricing Model not available")
+    
+    metadata = model_manager.get_metadata("pricing")
     
     return {
-        "model_metadata": MODEL_METADATA,
+        "model_metadata": metadata,
         "feature_columns": FEATURE_COLS,
         "valid_cities": VALID_CITIES,
-        "valid_seasons": VALID_SEASONS,
-        "model_pipeline": {
-            "preprocessing": "ColumnTransformer (StandardScaler + OneHotEncoder)",
-            "algorithm": MODEL_METADATA.get('model_name', 'RandomForest'),
-            "hyperparameters": {
-                "colsample_bytree": 1.0,
-                "learning_rate": 0.05,
-                "max_depth": 3,
-                "n_estimators": 200,
-                "subsample": 1.0
-            }
-        },
-        "performance": {
-            "test_mae": MODEL_METADATA.get('test_mae', 84.59),
-            "test_rmse": MODEL_METADATA.get('test_rmse', 172.22),  # Default to RandomForest
-            "test_r2": MODEL_METADATA.get('test_r2', 0.8586),  # Default to RandomForest
-            "train_size": MODEL_METADATA.get('train_size', 1324),
-            "test_size": MODEL_METADATA.get('test_size', 332)
-        }
+        "model_type": type(model).__name__
     }
 
 
 @app.post("/predict", response_model=PredictionResponse, tags=["Prediction"])
 async def predict_price(listing: ListingFeatures):
-    """
-    Predict nightly price for a single listing.
+    """Predict nightly price for a single listing."""
     
-    Returns predicted price in MAD with confidence intervals based on model MAE.
-    """
-    
-    if MODEL is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
+    model = model_manager.get_pricing_model()
+    if model is None:
+        raise HTTPException(status_code=503, detail="Pricing model not yet loaded")
     
     try:
-        # Prepare features
         X = prepare_features(listing)
+        prediction = model.predict(X)[0]
         
-        # Make prediction
-        prediction = MODEL.predict(X)[0]
+        # Metadata access
+        metadata = model_manager.get_metadata("pricing")
+        mae = metadata.get('test_mae', 84.59)
         
-        # Calculate confidence interval (predicted ± MAE)
-        mae = MODEL_METADATA.get('test_mae', 84.59)  # Default to RandomForest MAE
         ci_lower = max(0, prediction - mae)
         ci_upper = prediction + mae
-        
-        # Convert to USD (approximate rate: 1 MAD ≈ 0.10 USD)
         prediction_usd = prediction * 0.10
         
         return PredictionResponse(
@@ -382,7 +274,7 @@ async def predict_price(listing: ListingFeatures):
             confidence_interval_upper=round(ci_upper, 2),
             city=listing.city,
             season=listing.season_category,
-            model_version=str(MODEL_METADATA.get('version', '1.0')),
+            model_version=str(metadata.get('version', '2.0')),
             prediction_timestamp=datetime.now(timezone.utc).isoformat()
         )
         
@@ -393,32 +285,24 @@ async def predict_price(listing: ListingFeatures):
 
 @app.post("/batch-predict", response_model=BatchPredictionResponse, tags=["Prediction"])
 async def batch_predict(request: BatchPredictionRequest):
-    """
-    Predict prices for multiple listings in batch.
+    """Predict prices for multiple listings in batch."""
     
-    Maximum 100 listings per request for performance.
-    """
-    
-    if MODEL is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
+    model = model_manager.get_pricing_model()
+    if model is None:
+        raise HTTPException(status_code=503, detail="Pricing model not yet loaded")
     
     start_time = datetime.now(timezone.utc)
     predictions = []
+    metadata = model_manager.get_metadata("pricing")
+    mae = metadata.get('test_mae', 84.59)
     
     try:
         for listing in request.listings:
-            # Prepare features
             X = prepare_features(listing)
+            prediction = model.predict(X)[0]
             
-            # Make prediction
-            prediction = MODEL.predict(X)[0]
-            
-            # Calculate confidence interval
-            mae = MODEL_METADATA.get('test_mae', 84.59)  # Default to RandomForest MAE
             ci_lower = max(0, prediction - mae)
             ci_upper = prediction + mae
-            
-            # Convert to USD
             prediction_usd = prediction * 0.10
             
             predictions.append(
@@ -429,12 +313,11 @@ async def batch_predict(request: BatchPredictionRequest):
                     confidence_interval_upper=round(ci_upper, 2),
                     city=listing.city,
                     season=listing.season_category,
-                    model_version=str(MODEL_METADATA.get('version', '1.0')),
+                    model_version=str(metadata.get('version', '2.0')),
                     prediction_timestamp=datetime.now(timezone.utc).isoformat()
                 )
             )
         
-        # Calculate processing time
         processing_time = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
         
         return BatchPredictionResponse(
@@ -450,16 +333,12 @@ async def batch_predict(request: BatchPredictionRequest):
 
 @app.get("/city-insights/{city}", tags=["Analytics"])
 async def city_insights(city: str):
-    """
-    Get city-specific pricing insights and recommendations.
-    
-    Based on SHAP analysis and sensitivity testing.
-    """
-    
+    """Get city-specific pricing insights."""
     city = city.lower()
     if city not in VALID_CITIES:
         raise HTTPException(status_code=400, detail=f"Invalid city. Must be one of: {', '.join(VALID_CITIES)}")
     
+    # Static insights for now - could be dynamic later
     insights = {
         "casablanca": {
             "avg_price_mad": 49259,
@@ -470,120 +349,41 @@ async def city_insights(city: str):
                 {"feature": "rating_density", "impact_mad": 874, "rank": 3}
             ],
             "recommendations": [
-                "Focus on building rating density (get more reviews than competitors)",
-                "Target 5.0 ratings for +8.2% price uplift (~4,000 MAD)",
-                "Don't over-invest in prime downtown locations (paradoxical -7.2% impact)",
-                "Superhost badge has minimal value (-0.8%)",
-                "Modern mid-distance apartments outperform large central properties"
-            ],
-            "badge_superhost_impact_pct": -0.8,
-            "perfect_rating_uplift_pct": 8.2,
-            "prime_location_impact_pct": -7.2
+                "Focus on building rating density",
+                "Target 5.0 ratings for +8.2% price uplift",
+                "Don't over-invest in prime downtown locations",
+            ]
         },
         "marrakech": {
             "avg_price_mad": 46685,
             "market_type": "Tourist Destination",
             "key_drivers": [
                 {"feature": "dist_to_center", "impact_mad": 1791, "rank": 1},
-                {"feature": "struct_surface_m2", "impact_mad": 1091, "rank": 2},
-                {"feature": "rating_density", "impact_mad": 894, "rank": 3}
+                {"feature": "struct_surface_m2", "impact_mad": 1091, "rank": 2}
             ],
             "recommendations": [
-                "Location is KING: Prime spots add +4.9% premium (~2,000 MAD)",
-                "Invest in property size and character (1,091 MAD impact)",
-                "Perfect 5.0 rating = +15.8% uplift (~6,350 MAD)",
-                "Highlight authentic riad features and Medina proximity",
-                "Size and character matter here unlike other cities"
-            ],
-            "badge_superhost_impact_pct": -0.9,
-            "perfect_rating_uplift_pct": 15.8,
-            "prime_location_impact_pct": 4.9
-        },
-        "agadir": {
-            "avg_price_mad": 41694,
-            "market_type": "Beach Resort",
-            "key_drivers": [
-                {"feature": "dist_to_center", "impact_mad": 1870, "rank": 1},
-                {"feature": "rating_density", "impact_mad": 1229, "rank": 2},
-                {"feature": "rating_value", "impact_mad": 877, "rank": 3}
-            ],
-            "recommendations": [
-                "HIGHEST rating ROI: Perfect 5.0 = +19.0% uplift (~7,200 MAD)",
-                "Build rating density aggressively (1,229 MAD impact)",
-                "Superhost badge adds value here (+0.5% - only positive city)",
-                "Emphasize beach proximity over city center",
-                "Trust signals are critical for resort properties"
-            ],
-            "badge_superhost_impact_pct": 0.5,
-            "perfect_rating_uplift_pct": 19.0,
-            "prime_location_impact_pct": 2.0
-        },
-        "rabat": {
-            "avg_price_mad": 40959,
-            "market_type": "Capital/Administrative",
-            "key_drivers": [
-                {"feature": "dist_to_center", "impact_mad": 2279, "rank": 1},
-                {"feature": "rating_density", "impact_mad": 1343, "rank": 2},
-                {"feature": "rating_value", "impact_mad": 1166, "rank": 3}
-            ],
-            "recommendations": [
-                "CRITICAL: Obtain Superhost badge (+5.5% = ~2,135 MAD - highest impact!)",
-                "Perfect ratings yield +18.8% premium (~7,300 MAD)",
-                "Professional travelers value credentials over location glamour",
-                "Avoid chasing administrative center locations (-8.2% paradox)",
-                "Emphasize reliability, consistency, business amenities"
-            ],
-            "badge_superhost_impact_pct": 5.5,
-            "perfect_rating_uplift_pct": 18.8,
-            "prime_location_impact_pct": -8.2
-        },
-        "fes": {
-            "avg_price_mad": 37000,
-            "market_type": "Cultural Heritage",
-            "key_drivers": [
-                {"feature": "city_fes", "impact_mad": 500, "rank": 1},
-                {"feature": "rating_value", "impact_mad": 450, "rank": 2},
-                {"feature": "dist_to_center", "impact_mad": 400, "rank": 3}
-            ],
-            "recommendations": [
-                "Focus on cultural authenticity and heritage value",
-                "Medina proximity important for tourists",
-                "Maintain strong ratings for competitive positioning",
-                "Smaller market - consistency matters"
-            ],
-            "badge_superhost_impact_pct": 0.0,
-            "perfect_rating_uplift_pct": 12.0,
-            "prime_location_impact_pct": 3.0
-        },
-        "tangier": {
-            "avg_price_mad": 42000,
-            "market_type": "Port City/Gateway",
-            "key_drivers": [
-                {"feature": "rating_value", "impact_mad": 600, "rank": 1},
-                {"feature": "dist_to_center", "impact_mad": 550, "rank": 2},
-                {"feature": "rating_density", "impact_mad": 500, "rank": 3}
-            ],
-            "recommendations": [
-                "Balance tourist and business traveler needs",
-                "Rating quality drives competitive advantage",
-                "Port proximity and ferry access important",
-                "Moderate sensitivity across features"
-            ],
-            "badge_superhost_impact_pct": 1.0,
-            "perfect_rating_uplift_pct": 14.0,
-            "prime_location_impact_pct": 2.5
+                "Location is KING: Prime spots add +4.9% premium",
+                "Invest in property size and character",
+                "Perfect 5.0 rating = +15.8% uplift"
+            ]
         }
     }
     
-    return insights.get(city, {"error": "City insights not available"})
+    # Return default generic if city not detailed above, or exact match
+    return insights.get(city, {
+        "avg_price_mad": 40000,
+        "market_type": "General",
+        "key_drivers": [],
+        "recommendations": ["Maintain high ratings", "Optimize listing photos"]
+    })
 
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "app:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-        log_level="info"
+        host=settings.HOST,
+        port=settings.PORT,
+        reload=settings.DEBUG,
+        log_level="info" if not settings.DEBUG else "debug"
     )

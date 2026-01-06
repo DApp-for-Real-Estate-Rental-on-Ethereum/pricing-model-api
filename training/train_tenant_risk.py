@@ -146,23 +146,20 @@ def create_labels(df: pd.DataFrame) -> pd.Series:
     
     Heuristic: Mark as high-risk if:
     - is_suspended = True, OR
-    - n_reclamations_critical >= 1, OR  (lowered threshold)
-    - n_reclamations_high >= 2, OR      (lowered threshold)
-    - failed_transaction_rate > 0.25, OR (lowered threshold)
-    - user_penalty_points > 15, OR      (lowered threshold)
-    - n_reclamations_as_target >= 3     (added: multiple complaints)
+    - n_reclamations_critical >= 2, OR
+    - n_reclamations_high >= 3, OR
+    - failed_transaction_rate > 0.3, OR
+    - user_penalty_points > 20
     """
     labels = (
         (df['is_suspended'] == 1) |
-        (df['n_reclamations_critical'] >= 1) |
-        (df['n_reclamations_high'] >= 2) |
-        (df['failed_transaction_rate'] > 0.25) |
-        (df['user_penalty_points'] > 15) |
-        (df['n_reclamations_as_target'] >= 3)
+        (df['n_reclamations_critical'] >= 2) |
+        (df['n_reclamations_high'] >= 3) |
+        (df['failed_transaction_rate'] > 0.3) |
+        (df['user_penalty_points'] > 20)
     ).astype(int)
     
     logger.info(f"Label distribution: {labels.value_counts().to_dict()}")
-    logger.info(f"High-risk percentage: {labels.mean()*100:.1f}%")
     return labels
 
 
@@ -182,14 +179,8 @@ def train_model():
     y = create_labels(df)
     
     # Handle class imbalance
-    imbalance_ratio = y.sum() / len(y) if len(y) > 0 else 0
-    logger.info(f"Class imbalance ratio: {imbalance_ratio:.2%} high-risk, {1-imbalance_ratio:.2%} low-risk")
-    
-    if imbalance_ratio < 0.15:
-        logger.warning("Very imbalanced dataset (<15% positive class). Using class_weight='balanced'.")
-        use_balanced = True
-    else:
-        use_balanced = False
+    if y.sum() < len(y) * 0.1:
+        logger.warning("Very imbalanced dataset. Consider using class_weight='balanced'")
     
     # Check if we have enough samples for cross-validation
     min_samples_for_cv = 10  # Need at least 10 samples for 5-fold CV
@@ -227,15 +218,12 @@ def train_model():
         logger.warning(f"Using {n_splits}-fold CV (limited by sample size)")
     
     # Hyperparameter grid for RandomForest
-    # Always use 'balanced' if dataset is imbalanced
-    class_weight_options = ['balanced'] if use_balanced else ['balanced', None]
-    
     param_grid_rf = {
         'n_estimators': [100, 200] if len(X_train) >= 10 else [100],
         'max_depth': [10, 20, None] if len(X_train) >= 10 else [10, None],
         'min_samples_split': [2, 5],
         'min_samples_leaf': [1, 2],
-        'class_weight': class_weight_options
+        'class_weight': ['balanced', None]
     }
     
     # Train RandomForest with GridSearch
@@ -256,18 +244,14 @@ def train_model():
     logger.info("\nRandomForest Test Results:")
     logger.info(f"Accuracy: {accuracy_score(y_test, y_pred_rf):.4f}")
     if len(np.unique(y_test)) > 1:
-        roc_auc_rf = roc_auc_score(y_test, y_proba_rf)
-        logger.info(f"ROC-AUC: {roc_auc_rf:.4f}")
-        logger.info(f"Predicted class distribution: {pd.Series(y_pred_rf).value_counts().to_dict()}")
+        logger.info(f"ROC-AUC: {roc_auc_score(y_test, y_proba_rf):.4f}")
     else:
         logger.warning("Cannot calculate ROC-AUC (only one class in test set)")
-        roc_auc_rf = None
     logger.info("\nClassification Report:")
-    logger.info(classification_report(y_test, y_pred_rf, zero_division=0))
+    logger.info(classification_report(y_test, y_pred_rf))
     
     # Try GradientBoosting as alternative
     logger.info(f"\nTraining GradientBoostingClassifier ({n_splits}-fold CV)...")
-    # Note: GradientBoosting doesn't have class_weight, but we can use sample_weight
     param_grid_gb = {
         'n_estimators': [100, 200] if len(X_train) >= 10 else [100],
         'max_depth': [3, 5, 7] if len(X_train) >= 10 else [3, 5],
@@ -275,18 +259,11 @@ def train_model():
         'subsample': [0.8, 1.0]
     }
     
-    # Apply sample weights for GradientBoosting if imbalanced
-    if use_balanced:
-        from sklearn.utils.class_weight import compute_sample_weight
-        sample_weights = compute_sample_weight('balanced', y_train)
-    else:
-        sample_weights = None
-    
     gb = GradientBoostingClassifier(random_state=42)
     grid_search_gb = GridSearchCV(
         gb, param_grid_gb, cv=n_splits, scoring='roc_auc', n_jobs=-1, verbose=1
     )
-    grid_search_gb.fit(X_train_scaled, y_train, sample_weight=sample_weights)
+    grid_search_gb.fit(X_train_scaled, y_train)
     
     logger.info(f"Best GradientBoosting params: {grid_search_gb.best_params_}")
     logger.info(f"Best GradientBoosting CV score: {grid_search_gb.best_score_:.4f}")
@@ -297,19 +274,16 @@ def train_model():
     logger.info("\nGradientBoosting Test Results:")
     logger.info(f"Accuracy: {accuracy_score(y_test, y_pred_gb):.4f}")
     if len(np.unique(y_test)) > 1:
-        roc_auc_gb = roc_auc_score(y_test, y_proba_gb)
-        logger.info(f"ROC-AUC: {roc_auc_gb:.4f}")
-        logger.info(f"Predicted class distribution: {pd.Series(y_pred_gb).value_counts().to_dict()}")
+        logger.info(f"ROC-AUC: {roc_auc_score(y_test, y_proba_gb):.4f}")
     else:
         logger.warning("Cannot calculate ROC-AUC (only one class in test set)")
-        roc_auc_gb = None
     
     # Choose best model
-    if len(np.unique(y_test)) > 1 and roc_auc_rf is not None and roc_auc_gb is not None:
-        rf_score = roc_auc_rf
-        gb_score = roc_auc_gb
+    if len(np.unique(y_test)) > 1:
+        rf_score = roc_auc_score(y_test, y_proba_rf)
+        gb_score = roc_auc_score(y_test, y_proba_gb)
     else:
-        # If only one class, use CV score
+        # If only one class, use accuracy or CV score
         rf_score = grid_search_rf.best_score_
         gb_score = grid_search_gb.best_score_
     

@@ -80,8 +80,7 @@ def get_city_trend_data(
     Returns:
         DataFrame with monthly aggregated data
     """
-    with open("/tmp/debug_log.txt", "a") as f:
-        f.write(f"ENTERED get_city_trend_data. City: {city}\n")
+    logger.info(f"Analyzing market trends for City: {city}")
     if start_date:
         start = datetime.strptime(start_date, '%Y-%m-%d')
     else:

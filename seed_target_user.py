@@ -6,11 +6,11 @@ import os
 
 # DB Configuration
 DB_CONFIG = {
-    'host': 'localhost',
-    'port': 5432,
-    'database': 'lotfi',
-    'user': 'postgres',
-    'password': '12345'
+    'host': os.getenv('DB_HOST', 'localhost'),
+    'port': int(os.getenv('DB_PORT', 5432)),
+    'database': os.getenv('DB_NAME', 'derentdb'), # Default to derentdb not lotfi
+    'user': os.getenv('DB_USERNAME', 'postgres'),
+    'password': os.getenv('DB_PASSWORD', '12345')
 }
 
 TARGET_EMAIL = "nitixaj335@roratu.com"
@@ -46,12 +46,9 @@ def run_sql_seed(conn):
     conn.autocommit = False
     
     try:
-        # File is one directory up
-        sql_path = os.path.join(os.path.dirname(__file__), "..", "db-seed-lotfi-extended.sql")
+        # File is in the same directory as the script
+        sql_path = os.path.join(os.path.dirname(__file__), "db-seed-lotfi-extended.sql")
         
-        if not os.path.exists(sql_path):
-            sql_path = "/home/medgm/vsc/Projet JEE/db-seed-lotfi-extended.sql"
-            
         if not os.path.exists(sql_path):
              print(f"❌ SQL seed file not found at {sql_path}")
              return
@@ -88,7 +85,11 @@ def run():
 
     # 0.5. Sync Sequences
     print("Syncing sequences...")
-    sequences = ['addresses_id_seq', 'users_id_seq', 'bookings_id_seq']
+    sequences = [
+        'addresses_id_seq', 'users_id_seq', 'bookings_id_seq',
+        'property_types_id_seq', 'amenities_id_seq', 'amenity_categories_id_seq',
+        'transactions_id_seq', 'reclamations_id_seq', 'property_images_id_seq'
+    ]
     for seq in sequences:
         table = seq.replace('_id_seq', '')
         try:

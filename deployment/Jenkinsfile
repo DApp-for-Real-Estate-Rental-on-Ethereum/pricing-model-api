@@ -316,7 +316,8 @@ PYEOF
                         docker run -d \
                             --name morocco-pricing-api-test \
                             -p 8888:8000 \
-                            -v $(pwd)/models:/app/models:ro \
+                            -e DEBUG=false \
+                            -e WORKERS=1 \
                             medgm/morocco-pricing-api:${BUILD_NUMBER}
                         
                         # Wait for container to start (retry up to 10 times)

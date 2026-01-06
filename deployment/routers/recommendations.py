@@ -8,7 +8,7 @@ Based on tenant's booking history, preferences, and budget.
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict
 import joblib
 import pandas as pd
 import numpy as np
@@ -19,15 +19,11 @@ import logging
 from datetime import datetime
 
 from deployment.db_connection import execute_query, execute_query_single
+from deployment.model_manager import model_manager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/recommendations", tags=["Property Recommendations"])
-
-# Global models and data
-PROPERTY_CLUSTER_MODEL = None
-PROPERTY_FEATURES_DF = None
-CLUSTER_METADATA = {}
 
 
 class PropertyRecommendation(BaseModel):
@@ -250,25 +246,27 @@ def recommend_properties(
     Returns:
         List of PropertyRecommendation objects
     """
-    global PROPERTY_FEATURES_DF, PROPERTY_CLUSTER_MODEL
+    # Get model just to ensure it's loaded/logged (optional here as we rely more on cosine similarity for now)
+    # in a real hybrid system, we'd use the clusters
+    # model = model_manager.get_clustering_model()
     
-    # Load property features (Force reload to prevent stale data)
-    PROPERTY_FEATURES_DF = extract_property_features()
+    # Load property features (Local var)
+    property_features_df = extract_property_features()
     
-    if len(PROPERTY_FEATURES_DF) == 0:
+    if len(property_features_df) == 0:
         return []
     
     # Get tenant preferences
     tenant_prefs = extract_tenant_preferences(tenant_id)
     
     # Build tenant vector
-    tenant_vector = build_tenant_vector(tenant_prefs, PROPERTY_FEATURES_DF)
+    tenant_vector = build_tenant_vector(tenant_prefs, property_features_df)
     
     if len(tenant_vector) == 0:
         return []
     
     # Filter properties
-    filtered_df = PROPERTY_FEATURES_DF.copy()
+    filtered_df = property_features_df.copy()
     
     # Exclude already booked properties
     if exclude_property_ids:
@@ -278,15 +276,11 @@ def recommend_properties(
     if budget_mad:
         filtered_df = filtered_df[filtered_df['daily_price'] <= budget_mad]
     
-    # Exclude properties owned by tenant (if we had owner info)
-    # For now, skip this check
-    
     if len(filtered_df) == 0:
         return []
     
     # Build property feature vectors
     property_vectors = []
-    property_ids = []
     
     for _, row in filtered_df.iterrows():
         prop_vector = []
@@ -307,7 +301,6 @@ def recommend_properties(
         prop_vector.append(row.get('is_negotiable', 0.0))
         
         property_vectors.append(prop_vector)
-        property_ids.append(row['id'])
     
     property_vectors = np.array(property_vectors)
     
@@ -413,7 +406,6 @@ async def get_similar_properties(
         seed_vector.append(seed_row.get('is_negotiable', 0.0))
         
         property_vectors = []
-        property_ids = []
         
         for _, row in all_df.iterrows():
             prop_vector = []
@@ -425,7 +417,6 @@ async def get_similar_properties(
             prop_vector.append(row.get('is_negotiable', 0.0))
             
             property_vectors.append(prop_vector)
-            property_ids.append(row['id'])
         
         property_vectors = np.array(property_vectors)
         seed_vector = np.array(seed_vector)
@@ -457,36 +448,3 @@ async def get_similar_properties(
     except Exception as e:
         logger.error(f"Error getting similar properties for {property_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get similar properties: {str(e)}")
-
-
-def load_cluster_model():
-    """Load K-Means cluster model if available."""
-    global PROPERTY_CLUSTER_MODEL, CLUSTER_METADATA
-    
-    # Path to consolidated production models
-    base_path = Path(__file__).parent.parent.parent / "models" / "production"
-    model_path = base_path / "property_cluster_model.pkl"
-    
-    if model_path.exists():
-        try:
-            PROPERTY_CLUSTER_MODEL = joblib.load(model_path)
-            logger.info(f"✅ Property cluster model loaded from {model_path}")
-            
-            metadata_path = base_path / "property_cluster_model_metadata.pkl"
-            if metadata_path.exists():
-                CLUSTER_METADATA = joblib.load(metadata_path)
-            else:
-                CLUSTER_METADATA = {'n_clusters': 5, 'version': '1.0'}
-            
-            return True
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to load cluster model from {model_path}: {e}")
-            return False
-            
-    logger.info("ℹ️ Property cluster model not found. Using cosine similarity only.")
-    return False
-
-
-# Initialize on module load
-load_cluster_model()
-
