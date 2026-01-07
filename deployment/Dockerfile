@@ -27,7 +27,7 @@ COPY deployment/ deployment/
 COPY models/ models/
 COPY seed_target_user.py .
 # Seed data file (correct path)
-COPY db-seed-extended.sql .
+COPY db-seed-lotfi-extended.sql .
 
 # Create non-root user
 RUN useradd -m -u 1000 apiuser && \
